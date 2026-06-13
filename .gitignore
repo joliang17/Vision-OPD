@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+*.log
+
+checkpoints/
+data/
+external/
+logs/
+rollouts/
+tensorboard_log/
+vlmevalkit_outputs/

@@ -3,9 +3,8 @@
 set -euo pipefail
 
 # =============================================================================
-# Vision-OPD Training Script
-# Paper: Vision-OPD: Learning to See Fine Details for Multimodal LLMs
-#        via On-Policy Self-Distillation
+# Vision-OPD Qwen3-VL Training Script
+# Captures the Qwen3-VL-4B launch used in this local environment.
 # =============================================================================
 
 # =============================================================================
@@ -63,6 +62,11 @@ CUSTOM_CHAT_TEMPLATE_FILE="${PROJECT_ROOT}/chat_templates/perception_chat_templa
 # --- Data Paths ---
 DATA_DIR="${PROJECT_ROOT}/data"
 TASK_TRAIN_FILE="${DATA_DIR}/train.parquet"
+if [[ ! -f "$TASK_TRAIN_FILE" ]]; then
+    echo "Training file not found: $TASK_TRAIN_FILE" >&2
+    echo "Run: python3 scripts/prepare_data.py --data-dir ./data" >&2
+    exit 1
+fi
 
 MODEL_NAME=$(basename "$DEFAULT_MODEL_PATH")
 EXPERIMENT_NAME="Vision-OPD-${MODEL_NAME}"
