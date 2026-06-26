@@ -4,9 +4,16 @@ set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CONFIG_NAME="vopd"
-DEFAULT_MODEL_PATH="Qwen/Qwen3-VL-4B-Instruct"
+# Model size: 4B (default) or 2B. Override with MODEL_SIZE=2B, or set MODEL_PATH directly.
+MODEL_SIZE="${MODEL_SIZE:-4B}"
+if [[ "$MODEL_SIZE" == "2B" ]]; then
+    DEFAULT_MODEL_PATH="Qwen/Qwen3-VL-2B-Instruct"
+else
+    DEFAULT_MODEL_PATH="Qwen/Qwen3-VL-4B-Instruct"
+fi
 if [[ -z "${MODEL_PATH:-}" ]]; then
-    HF_CACHE_MODEL_DIR="${HF_HOME:-$HOME/.cache/huggingface}/hub/models--Qwen--Qwen3-VL-4B-Instruct/snapshots"
+    MODEL_REPO_DIR="${DEFAULT_MODEL_PATH//\//--}"
+    HF_CACHE_MODEL_DIR="${HF_HOME:-$HOME/.cache/huggingface}/hub/models--${MODEL_REPO_DIR}/snapshots"
     if [[ -d "$HF_CACHE_MODEL_DIR" ]]; then
         MODEL_PATH="$(find "$HF_CACHE_MODEL_DIR" -mindepth 1 -maxdepth 1 -type d | sort | tail -n 1)"
     else
@@ -181,6 +188,8 @@ fi
 
 echo "Running: $EXPERIMENT_NAME"
 echo "Experiment: $EXPERIMENT"
+echo "Model size: $MODEL_SIZE  (path: $MODEL_PATH)"
+echo "GPUs: ${TRAINER_N_GPUS_PER_NODE}  (offline=$HF_HUB_OFFLINE, wandb=$WANDB_MODE)"
 echo "Train file: $TASK_TRAIN_FILE"
 
 python3 -m verl.trainer.main_ppo --config-name "$CONFIG_NAME" \
