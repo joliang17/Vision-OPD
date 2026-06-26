@@ -173,9 +173,20 @@ ulimit -c 0
 export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"
 export TRANSFORMERS_OFFLINE="${TRANSFORMERS_OFFLINE:-1}"
 export HF_DATASETS_OFFLINE="${HF_DATASETS_OFFLINE:-1}"
-# No wandb: stick to console + tensorboard (TRAINER_LOGGER default already excludes wandb).
-export WANDB_MODE="${WANDB_MODE:-disabled}"
-export WANDB_DISABLED="${WANDB_DISABLED:-true}"
+# --- wandb (opt-in) -----------------------------------------------------------
+# Requires byted-wandb installed:  pip install -U byted-wandb -i https://bytedpypi.byted.org/simple
+# byted-wandb handles its own auth (no WANDB_API_KEY needed).
+# Enable with WANDB_ENABLE=1 (sets logger to console+tensorboard+wandb and online mode).
+# Default: wandb disabled (console + tensorboard only).
+if [[ "${WANDB_ENABLE:-0}" == "1" ]]; then
+    export WANDB_MODE="${WANDB_MODE:-online}"
+    unset WANDB_DISABLED 2>/dev/null || true
+    TRAINER_LOGGER='["console","tensorboard","wandb"]'
+else
+    export WANDB_MODE="${WANDB_MODE:-disabled}"
+    export WANDB_DISABLED="${WANDB_DISABLED:-true}"
+    TRAINER_LOGGER="${TRAINER_LOGGER:-[\"console\",\"tensorboard\"]}"
+fi
 
 CHAT_TEMPLATE_ARGS=()
 if [[ -n "${CUSTOM_CHAT_TEMPLATE_FILE}" ]]; then
