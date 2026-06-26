@@ -107,6 +107,18 @@ class SelfDistillationConfig(BaseConfig):
     teacher_model_path: Optional[str] = None
     teacher_image_key: Optional[str] = None
     teacher_prompt_mode: Optional[str] = None
+    ra_vad: bool = False
+    ra_ctrl_mode: str = "none"
+    ra_ctrl_image_key: Optional[str] = None
+    ra_generic_prompt: str = "Describe this image in detail."
+    ra_delta: float = 0.0
+    ra_clip_quantile: float = 0.95
+    ra_min_positive_tokens: int = 1
+    ra_temperature: float = 2.0
+    ra_uniform_weight: bool = False
+    ra_no_sample_gate: bool = False
+    ra_margin_scale: float = 0.5
+    ra_answer_scale: float = 0.1
     answer_hint_template: str = (
         "\n\nHere is a reference solution to this problem:\n"
         "{answer}\n\n"
@@ -145,6 +157,36 @@ class SelfDistillationConfig(BaseConfig):
             raise ValueError(
                 f"self_distillation.teacher_prompt_mode must be None or 'answer_hint', got {self.teacher_prompt_mode}"
             )
+        valid_ra_ctrl_modes = ["none", "degrade", "qvis", "noimg", "black"]
+        if self.ra_ctrl_mode not in valid_ra_ctrl_modes:
+            raise ValueError(
+                f"self_distillation.ra_ctrl_mode must be one of {valid_ra_ctrl_modes}, got {self.ra_ctrl_mode}"
+            )
+        if self.ra_vad:
+            if self.teacher_prompt_mode is not None:
+                raise ValueError("self_distillation.ra_vad requires teacher_prompt_mode=None.")
+            if self.ra_ctrl_mode == "none":
+                raise ValueError("self_distillation.ra_vad requires ra_ctrl_mode != 'none'.")
+            if self.ra_ctrl_mode in {"none", "degrade", "qvis", "black"} and not self.ra_ctrl_image_key:
+                raise ValueError(
+                    "self_distillation.ra_ctrl_image_key is required when ra_vad=True and "
+                    f"ra_ctrl_mode={self.ra_ctrl_mode!r}."
+                )
+            if not 0.0 < self.ra_clip_quantile <= 1.0:
+                raise ValueError(
+                    f"self_distillation.ra_clip_quantile must be in (0,1], got {self.ra_clip_quantile}"
+                )
+            if self.ra_min_positive_tokens <= 0:
+                raise ValueError(
+                    "self_distillation.ra_min_positive_tokens must be positive, "
+                    f"got {self.ra_min_positive_tokens}"
+                )
+            if self.ra_temperature <= 0:
+                raise ValueError(f"self_distillation.ra_temperature must be positive, got {self.ra_temperature}")
+            if self.ra_margin_scale <= 0:
+                raise ValueError(f"self_distillation.ra_margin_scale must be positive, got {self.ra_margin_scale}")
+            if self.ra_answer_scale <= 0:
+                raise ValueError(f"self_distillation.ra_answer_scale must be positive, got {self.ra_answer_scale}")
         if self.teacher_always_on and not self.teacher_image_key and self.teacher_prompt_mode != "answer_hint":
             raise ValueError(
                 "self_distillation.teacher_image_key is required when teacher_always_on=True "

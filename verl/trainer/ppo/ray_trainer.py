@@ -822,6 +822,49 @@ class RayPPOTrainer:
         return teacher_messages
 
     @staticmethod
+    def _remove_images_from_messages(messages: list[dict]) -> list[dict]:
+        text_only_messages = deepcopy(messages)
+        for message in text_only_messages:
+            content = message.get("content")
+            if not isinstance(content, list):
+                continue
+            message["content"] = [
+                item
+                for item in content
+                if not (isinstance(item, dict) and item.get("type") in {"image", "video"})
+            ]
+        return text_only_messages
+
+    def _build_generic_visual_messages(self, messages: list[dict], generic_prompt: str) -> list[dict]:
+        ctrl_messages = deepcopy(messages)
+        for message in ctrl_messages:
+            content = message.get("content")
+            if not isinstance(content, list):
+                continue
+            message["content"] = [
+                item
+                for item in content
+                if isinstance(item, dict) and item.get("type") in {"image", "video"}
+            ]
+        if not ctrl_messages:
+            ctrl_messages = [{"role": "user", "content": generic_prompt}]
+            return ctrl_messages
+        last_msg = ctrl_messages[-1]
+        content = last_msg.get("content")
+        if isinstance(content, list):
+            last_msg["content"] = content + [{"type": "text", "text": generic_prompt}]
+        else:
+            last_msg["content"] = generic_prompt
+        return ctrl_messages
+
+    def _make_black_images_like(self, images: list[Any]) -> list[Image.Image]:
+        black_images = []
+        for image in images:
+            normalized = self._normalize_teacher_image(image)
+            black_images.append(Image.new("RGB", normalized.size, color=(0, 0, 0)))
+        return black_images
+
+    @staticmethod
     def _extract_images_from_messages(messages: list[dict]) -> list[Image.Image]:
         images = []
         for message in messages:
@@ -1149,6 +1192,43 @@ class RayPPOTrainer:
         response_mask = batch.batch["response_mask"]
         responses = batch.batch["responses"]
         batch_size = batch.batch.batch_size[0]
+        ra_vad_enabled = bool(self_distillation_cfg.get("ra_vad", False))
+
+        def pad_teacher_inputs(
+            input_ids_list: list[torch.Tensor],
+            attention_mask_list: list[torch.Tensor],
+            position_ids_list: list[torch.Tensor],
+        ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+            input_ids = torch.nn.utils.rnn.pad_sequence(
+                input_ids_list,
+                batch_first=True,
+                padding_value=self.tokenizer.pad_token_id or 0,
+            ).to(device)
+            attention_mask = torch.nn.utils.rnn.pad_sequence(
+                attention_mask_list,
+                batch_first=True,
+                padding_value=0,
+            ).to(device)
+
+            max_len = input_ids.shape[1]
+            if position_ids_list[0].dim() == 1:
+                position_ids = torch.zeros(
+                    (batch_size, max_len),
+                    dtype=position_ids_list[0].dtype,
+                    device=device,
+                )
+                for idx, sample_position_ids in enumerate(position_ids_list):
+                    position_ids[idx, : sample_position_ids.shape[-1]] = sample_position_ids.to(device)
+            else:
+                rope_dims = position_ids_list[0].shape[0]
+                position_ids = torch.zeros(
+                    (batch_size, rope_dims, max_len),
+                    dtype=position_ids_list[0].dtype,
+                    device=device,
+                )
+                for idx, sample_position_ids in enumerate(position_ids_list):
+                    position_ids[idx, :, : sample_position_ids.shape[-1]] = sample_position_ids.to(device)
+            return input_ids, attention_mask, position_ids
 
         # Determine teacher input construction mode
         teacher_prompt_mode = self_distillation_cfg.get("teacher_prompt_mode", None)
@@ -1280,6 +1360,15 @@ class RayPPOTrainer:
             teacher_image_key = self_distillation_cfg.teacher_image_key
             if teacher_image_key not in batch.non_tensor_batch:
                 raise KeyError(f"Teacher image key `{teacher_image_key}` not found in batch.non_tensor_batch")
+            ra_ctrl_mode = self_distillation_cfg.get("ra_ctrl_mode", "none")
+            ra_ctrl_image_key = self_distillation_cfg.get("ra_ctrl_image_key", None)
+            if ra_vad_enabled and ra_ctrl_mode not in {"noimg"}:
+                if not ra_ctrl_image_key:
+                    raise ValueError("RA-VAD control image key is required for this control mode.")
+                if ra_ctrl_image_key not in batch.non_tensor_batch:
+                    raise KeyError(
+                        f"RA-VAD control image key `{ra_ctrl_image_key}` not found in batch.non_tensor_batch"
+                    )
             fallback_to_policy_loss = self_distillation_cfg.get("fallback_to_policy_loss_on_missing_teacher", False)
 
             teacher_input_ids_list = []
@@ -1288,6 +1377,11 @@ class RayPPOTrainer:
             teacher_response_start_idx_list = []
             teacher_multi_modal_inputs_list = []
             teacher_present_mask_list = []
+            teacher_ctrl_input_ids_list = []
+            teacher_ctrl_attention_mask_list = []
+            teacher_ctrl_position_ids_list = []
+            teacher_ctrl_response_start_idx_list = []
+            teacher_ctrl_multi_modal_inputs_list = []
 
             for i in range(batch_size):
                 self._raise_if_response_contains_visual_special_tokens(
@@ -1340,35 +1434,56 @@ class RayPPOTrainer:
                 teacher_response_start_idx_list.append(teacher_response_start_idx)
                 teacher_multi_modal_inputs_list.append(teacher_multi_modal_inputs)
 
-            teacher_input_ids = torch.nn.utils.rnn.pad_sequence(
-                teacher_input_ids_list,
-                batch_first=True,
-                padding_value=self.tokenizer.pad_token_id or 0,
-            ).to(device)
-            teacher_attention_mask = torch.nn.utils.rnn.pad_sequence(
-                teacher_attention_mask_list,
-                batch_first=True,
-                padding_value=0,
-            ).to(device)
+                if ra_vad_enabled:
+                    raw_prompt_messages = list(batch.non_tensor_batch["raw_prompt"][i])
+                    if ra_ctrl_mode == "noimg":
+                        ctrl_messages = self._remove_images_from_messages(raw_prompt_messages)
+                    else:
+                        ctrl_images = batch.non_tensor_batch[ra_ctrl_image_key][i]
+                        if isinstance(ctrl_images, np.ndarray):
+                            ctrl_images = ctrl_images.tolist()
+                        elif ctrl_images is None:
+                            ctrl_images = []
+                        else:
+                            ctrl_images = list(ctrl_images)
+                        if not self._teacher_images_available(ctrl_images):
+                            raise ValueError(
+                                f"RA-VAD control image key `{ra_ctrl_image_key}` is empty for sample {i}."
+                            )
+                        if ra_ctrl_mode == "black":
+                            ctrl_images = self._make_black_images_like(ctrl_images)
+                        if ra_ctrl_mode == "qvis":
+                            ctrl_prompt_messages = self._build_generic_visual_messages(
+                                raw_prompt_messages,
+                                self_distillation_cfg.get("ra_generic_prompt", "Describe this image in detail."),
+                            )
+                            ctrl_messages = self._swap_images_in_messages(ctrl_prompt_messages, ctrl_images)
+                        else:
+                            ctrl_messages = self._prepare_teacher_messages(raw_prompt_messages, ctrl_images)
 
-            max_teacher_len = teacher_input_ids.shape[1]
-            if teacher_position_ids_list[0].dim() == 1:
-                teacher_position_ids = torch.zeros(
-                    (batch_size, max_teacher_len),
-                    dtype=teacher_position_ids_list[0].dtype,
-                    device=device,
-                )
-                for i, position_ids in enumerate(teacher_position_ids_list):
-                    teacher_position_ids[i, : position_ids.shape[-1]] = position_ids.to(device)
-            else:
-                rope_dims = teacher_position_ids_list[0].shape[0]
-                teacher_position_ids = torch.zeros(
-                    (batch_size, rope_dims, max_teacher_len),
-                    dtype=teacher_position_ids_list[0].dtype,
-                    device=device,
-                )
-                for i, position_ids in enumerate(teacher_position_ids_list):
-                    teacher_position_ids[i, :, : position_ids.shape[-1]] = position_ids.to(device)
+                    (
+                        teacher_ctrl_input_ids,
+                        teacher_ctrl_attention_mask,
+                        teacher_ctrl_position_ids,
+                        teacher_ctrl_response_start_idx,
+                        teacher_ctrl_multi_modal_inputs,
+                    ) = self._build_teacher_prompt_inputs(
+                        ctrl_messages,
+                        responses[i],
+                        response_mask[i],
+                        max_prompt_len=self_distillation_cfg.max_reprompt_len,
+                    )
+                    teacher_ctrl_input_ids_list.append(teacher_ctrl_input_ids)
+                    teacher_ctrl_attention_mask_list.append(teacher_ctrl_attention_mask)
+                    teacher_ctrl_position_ids_list.append(teacher_ctrl_position_ids)
+                    teacher_ctrl_response_start_idx_list.append(teacher_ctrl_response_start_idx)
+                    teacher_ctrl_multi_modal_inputs_list.append(teacher_ctrl_multi_modal_inputs)
+
+            teacher_input_ids, teacher_attention_mask, teacher_position_ids = pad_teacher_inputs(
+                teacher_input_ids_list,
+                teacher_attention_mask_list,
+                teacher_position_ids_list,
+            )
 
             teacher_present_mask = torch.tensor(teacher_present_mask_list, dtype=torch.float32, device=device)
             grpo_fallback_count = float(batch_size - teacher_present_mask.sum().item())
@@ -1378,15 +1493,37 @@ class RayPPOTrainer:
                 "self_distillation/policy_fallback_fraction": (1.0 - teacher_present_mask.mean()).item(),
                 "self_distillation/grpo_fallback_count": grpo_fallback_count,
             }
+            tensors = {
+                "teacher_input_ids": teacher_input_ids,
+                "teacher_attention_mask": teacher_attention_mask,
+                "teacher_position_ids": teacher_position_ids,
+                "teacher_response_start_idx": torch.stack(teacher_response_start_idx_list).to(device),
+                "self_distillation_mask": teacher_present_mask,
+            }
+            non_tensors = {"teacher_multi_modal_inputs": teacher_multi_modal_inputs_list}
+            if ra_vad_enabled:
+                (
+                    teacher_ctrl_input_ids,
+                    teacher_ctrl_attention_mask,
+                    teacher_ctrl_position_ids,
+                ) = pad_teacher_inputs(
+                    teacher_ctrl_input_ids_list,
+                    teacher_ctrl_attention_mask_list,
+                    teacher_ctrl_position_ids_list,
+                )
+                tensors.update(
+                    {
+                        "teacher_ctrl_input_ids": teacher_ctrl_input_ids,
+                        "teacher_ctrl_attention_mask": teacher_ctrl_attention_mask,
+                        "teacher_ctrl_position_ids": teacher_ctrl_position_ids,
+                        "teacher_ctrl_response_start_idx": torch.stack(teacher_ctrl_response_start_idx_list).to(device),
+                    }
+                )
+                non_tensors["teacher_ctrl_multi_modal_inputs"] = teacher_ctrl_multi_modal_inputs_list
+                metrics[f"ra_vad/ctrl_mode/{ra_ctrl_mode}"] = 1.0
             return DataProto.from_dict(
-                tensors={
-                    "teacher_input_ids": teacher_input_ids,
-                    "teacher_attention_mask": teacher_attention_mask,
-                    "teacher_position_ids": teacher_position_ids,
-                    "teacher_response_start_idx": torch.stack(teacher_response_start_idx_list).to(device),
-                    "self_distillation_mask": teacher_present_mask,
-                },
-                non_tensors={"teacher_multi_modal_inputs": teacher_multi_modal_inputs_list},
+                tensors=tensors,
+                non_tensors=non_tensors,
             ), metrics
 
         response_texts = [self.tokenizer.decode(ids, skip_special_tokens=True) for ids in responses]

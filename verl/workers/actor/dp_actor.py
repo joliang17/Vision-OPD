@@ -31,6 +31,7 @@ from torch.distributed.tensor import DTensor
 import verl.utils.torch_functional as verl_F
 from verl import DataProto
 from verl.trainer.ppo.core_algos import agg_loss, compute_self_distillation_loss, get_policy_loss_fn, kl_penalty
+from verl.trainer.ppo.ra_vad import compute_ra_weights, ra_kd_loss
 from verl.utils.attention_utils import index_first_axis, pad_input, rearrange, unpad_input
 from verl.utils.device import get_device_id, get_device_name
 from verl.utils.fsdp_utils import FSDPModule, fsdp2_clip_grad_norm_
@@ -853,9 +854,11 @@ class DataParallelPPOActor(BasePPOActor):
 
         self_distillation_enabled = loss_mode == "vopd"
         self_distillation_cfg = getattr(self.config, "self_distillation", None)
+        ra_vad_enabled = False
         if self_distillation_enabled:
             if self_distillation_cfg is None:
                 raise ValueError(f"loss_mode={loss_mode} requires actor.self_distillation config.")
+            ra_vad_enabled = bool(self_distillation_cfg.get("ra_vad", False))
             self_distillation_required_keys = {
                 "teacher_input_ids",
                 "teacher_attention_mask",
@@ -863,6 +866,19 @@ class DataParallelPPOActor(BasePPOActor):
                 "teacher_response_start_idx",
                 "self_distillation_mask",
             }
+            if ra_vad_enabled:
+                if self_distillation_cfg.get("distillation_topk", None) is not None:
+                    raise ValueError(
+                        "RA-VAD requires full-vocab distillation; set self_distillation.distillation_topk=null."
+                    )
+                self_distillation_required_keys.update(
+                    {
+                        "teacher_ctrl_input_ids",
+                        "teacher_ctrl_attention_mask",
+                        "teacher_ctrl_position_ids",
+                        "teacher_ctrl_response_start_idx",
+                    }
+                )
             assert self_distillation_required_keys.issubset(set(data.batch.keys())), f"Missing required keys: {self_distillation_required_keys - set(data.batch.keys())}"
 
         select_keys = [
@@ -895,11 +911,16 @@ class DataParallelPPOActor(BasePPOActor):
         has_teacher_multi_modal_inputs = self._has_non_empty_multi_modal_inputs(
             data.non_tensor_batch.get("teacher_multi_modal_inputs")
         )
+        has_teacher_ctrl_multi_modal_inputs = self._has_non_empty_multi_modal_inputs(
+            data.non_tensor_batch.get("teacher_ctrl_multi_modal_inputs")
+        )
         non_tensor_select_keys = []
         if has_multi_modal_inputs:
             non_tensor_select_keys.append("multi_modal_inputs")
         if has_teacher_multi_modal_inputs:
             non_tensor_select_keys.append("teacher_multi_modal_inputs")
+        if has_teacher_ctrl_multi_modal_inputs:
+            non_tensor_select_keys.append("teacher_ctrl_multi_modal_inputs")
         if self.use_prefix_grouper and "uid" in data.non_tensor_batch.keys():
             non_tensor_select_keys.append("uid")
 
@@ -1040,6 +1061,34 @@ class DataParallelPPOActor(BasePPOActor):
                         teacher_log_prob = teacher_outputs["log_probs"]
                         teacher_all_logps = teacher_outputs.get("all_logps") if return_all_logps else None
                         teacher_topk_logps = teacher_outputs.get("topk_logps") if distill_topk else None
+                        teacher_ctrl_log_prob = None
+                        if ra_vad_enabled:
+                            teacher_ctrl_inputs = {
+                                "responses": model_inputs["responses"],
+                                "input_ids": model_inputs["teacher_ctrl_input_ids"],
+                                "attention_mask": model_inputs["teacher_ctrl_attention_mask"],
+                                "position_ids": model_inputs["teacher_ctrl_position_ids"],
+                                "response_start_idx": model_inputs["teacher_ctrl_response_start_idx"],
+                            }
+                            if "teacher_ctrl_multi_modal_inputs" in model_inputs:
+                                teacher_ctrl_inputs["multi_modal_inputs"] = model_inputs[
+                                    "teacher_ctrl_multi_modal_inputs"
+                                ]
+                            with torch.no_grad():
+                                teacher_ctrl_forward_start = time.perf_counter()
+                                teacher_ctrl_outputs = self._forward_micro_batch(
+                                    teacher_ctrl_inputs,
+                                    temperature=temperature,
+                                    calculate_entropy=False,
+                                    return_all_logps=False,
+                                    distill_topk=None,
+                                    module=teacher_model,
+                                )
+                                teacher_ctrl_forward_time = time.perf_counter() - teacher_ctrl_forward_start
+                            stage_wall_time_totals["timing_s/update_actor/teacher_forward"] += (
+                                teacher_ctrl_forward_time
+                            )
+                            teacher_ctrl_log_prob = teacher_ctrl_outputs["log_probs"]
                         if self_distillation_cfg.get("log_prob_dump_dir", None):
                             if distill_topk:
                                 student_distill_log_probs = student_topk_logps
@@ -1066,23 +1115,56 @@ class DataParallelPPOActor(BasePPOActor):
                                     }
                                 )
                         loss_compute_start = time.perf_counter()
-                        vopd_loss, vopd_metrics = compute_self_distillation_loss(
-                            student_log_probs=log_prob,
-                            teacher_log_probs=teacher_log_prob,
-                            response_mask=response_mask,
-                            self_distillation_config=self_distillation_cfg,
-                            old_log_probs=old_log_prob,
-                            student_all_log_probs=student_all_logps,
-                            teacher_all_log_probs=teacher_all_logps,
-                            student_topk_log_probs=student_topk_logps,
-                            teacher_topk_log_probs=teacher_topk_logps,
-                            self_distillation_mask=self_distillation_mask,
-                            loss_agg_mode=loss_agg_mode,
-                            rollout_is_weights=rollout_is_weights,
-                            batch_num_tokens=self.config.global_batch_info.get("batch_num_tokens"),
-                            global_batch_size=self.config.global_batch_info.get("global_batch_size"),
-                            loss_scale_factor=self.config.global_batch_info.get("loss_scale_factor"),
-                        )
+                        if ra_vad_enabled:
+                            if student_all_logps is None or teacher_all_logps is None or teacher_ctrl_log_prob is None:
+                                raise ValueError(
+                                    "RA-VAD requires student_all_logps, teacher_all_logps, and ctrl log probs."
+                                )
+                            ra_weights, ra_metrics = compute_ra_weights(
+                                logp_hi=teacher_log_prob,
+                                logp_ctrl=teacher_ctrl_log_prob,
+                                response_mask=response_mask,
+                                delta=self_distillation_cfg.get("ra_delta", 0.0),
+                                clip_quantile=self_distillation_cfg.get("ra_clip_quantile", 0.95),
+                                min_positive_tokens=self_distillation_cfg.get("ra_min_positive_tokens", 1),
+                                uniform_weight=self_distillation_cfg.get("ra_uniform_weight", False),
+                                no_sample_gate=self_distillation_cfg.get("ra_no_sample_gate", False),
+                                margin_scale=self_distillation_cfg.get("ra_margin_scale", 0.5),
+                                answer_scale=self_distillation_cfg.get("ra_answer_scale", 0.1),
+                            )
+                            vopd_loss, vopd_metrics = ra_kd_loss(
+                                student_all_log_probs=student_all_logps,
+                                teacher_all_log_probs=teacher_all_logps,
+                                ra_weights=ra_weights,
+                                response_mask=response_mask,
+                                self_distillation_mask=self_distillation_mask,
+                                temperature=self_distillation_cfg.get("ra_temperature", 2.0),
+                            )
+                            vopd_metrics.update(ra_metrics)
+                            vopd_metrics["ra_vad/teacher_hi_logp_mean"] = (
+                                (teacher_log_prob * response_mask).sum() / response_mask.sum().clamp(min=1.0)
+                            ).detach().item()
+                            vopd_metrics["ra_vad/teacher_ctrl_logp_mean"] = (
+                                (teacher_ctrl_log_prob * response_mask).sum() / response_mask.sum().clamp(min=1.0)
+                            ).detach().item()
+                        else:
+                            vopd_loss, vopd_metrics = compute_self_distillation_loss(
+                                student_log_probs=log_prob,
+                                teacher_log_probs=teacher_log_prob,
+                                response_mask=response_mask,
+                                self_distillation_config=self_distillation_cfg,
+                                old_log_probs=old_log_prob,
+                                student_all_log_probs=student_all_logps,
+                                teacher_all_log_probs=teacher_all_logps,
+                                student_topk_log_probs=student_topk_logps,
+                                teacher_topk_log_probs=teacher_topk_logps,
+                                self_distillation_mask=self_distillation_mask,
+                                loss_agg_mode=loss_agg_mode,
+                                rollout_is_weights=rollout_is_weights,
+                                batch_num_tokens=self.config.global_batch_info.get("batch_num_tokens"),
+                                global_batch_size=self.config.global_batch_info.get("global_batch_size"),
+                                loss_scale_factor=self.config.global_batch_info.get("loss_scale_factor"),
+                            )
                         loss_compute_time = time.perf_counter() - loss_compute_start
                         stage_wall_time_totals["timing_s/update_actor/loss_compute"] += loss_compute_time
 
