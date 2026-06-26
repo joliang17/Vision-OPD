@@ -183,6 +183,34 @@ self_distillation:
 
     {feedback_raw}
 
+  # --- RA-VAD (counterfactual teacher-control distillation) ---
+  # Enable RA-weighted full-vocab KL distillation (loss_mode must be "vopd").
+  ra_vad: False
+  # Counterfactual control mode: none|degrade|qvis|noimg|black
+  ra_ctrl_mode: none
+  # Dataset column holding the control image (required for degrade/qvis/black).
+  ra_ctrl_image_key: null
+  # Generic prompt used by the qvis control.
+  ra_generic_prompt: "Describe this image in detail."
+  # relu margin for the RA weight: w_i ~ relu(logp_hi - logp_ctrl - delta)
+  ra_delta: 0.0
+  # Clip RA positive weights to this quantile over response tokens.
+  ra_clip_quantile: 0.95
+  # Skip KD (w=0) if fewer than this many positive tokens.
+  ra_min_positive_tokens: 1
+  # Temperature for the full-vocab KL (loss scaled by temperature^2).
+  ra_temperature: 2.0
+  # Ablation: uniform token weight (ra_norm -> response mask).
+  ra_uniform_weight: False
+  # Ablation: force sample gate g_sample = 1.
+  ra_no_sample_gate: False
+  # Sample-gate scales: g = sigmoid(margin/margin_scale) * sigmoid(ra_answer/answer_scale).
+  ra_margin_scale: 0.5
+  ra_answer_scale: 0.1
+  # Visual-token budgets for the offline degrade control (R_res).
+  ra_ctrl_low_tokens: 256
+  ra_ctrl_up_tokens: 1536
+
 # Constant C in Dual-clip PPO; clips when advantage < 0 and ratio > C
 clip_ratio_c: 3.0
 
