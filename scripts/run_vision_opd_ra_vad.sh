@@ -70,6 +70,9 @@ TRAINER_ROLLOUT_DATA_DIR="${TRAINER_ROLLOUT_DATA_DIR:-${PROJECT_ROOT}/rollouts/$
 mkdir -p "$TRAINER_ROLLOUT_DATA_DIR"
 
 EXTRA_ARGS=("$@")
+# RA-VAD variants require full-vocab (non-top-k) distillation so student/teacher
+# emit `all_logps` for the full-vocab KL. Set explicitly (do not rely on the default).
+RA_FULL_LOGIT_ARG="actor_rollout_ref.actor.self_distillation.full_logit_distillation=True"
 EXPERIMENT_ARGS=()
 case "$EXPERIMENT" in
     visionopd)
@@ -100,6 +103,7 @@ case "$EXPERIMENT" in
             actor_rollout_ref.actor.self_distillation.ra_ctrl_mode=degrade
             actor_rollout_ref.actor.self_distillation.ra_ctrl_image_key=images_degraded
             actor_rollout_ref.actor.self_distillation.distillation_topk=null
+            "$RA_FULL_LOGIT_ARG"
         )
         ;;
     qvis)
@@ -111,6 +115,7 @@ case "$EXPERIMENT" in
             actor_rollout_ref.actor.self_distillation.ra_ctrl_image_key=images
             actor_rollout_ref.actor.self_distillation.ra_generic_prompt="Describe this image in detail."
             actor_rollout_ref.actor.self_distillation.distillation_topk=null
+            "$RA_FULL_LOGIT_ARG"
         )
         ;;
     noimg)
@@ -120,6 +125,7 @@ case "$EXPERIMENT" in
             actor_rollout_ref.actor.self_distillation.ra_vad=True
             actor_rollout_ref.actor.self_distillation.ra_ctrl_mode=noimg
             actor_rollout_ref.actor.self_distillation.distillation_topk=null
+            "$RA_FULL_LOGIT_ARG"
         )
         ;;
     black)
@@ -130,6 +136,7 @@ case "$EXPERIMENT" in
             actor_rollout_ref.actor.self_distillation.ra_ctrl_mode=black
             actor_rollout_ref.actor.self_distillation.ra_ctrl_image_key=images
             actor_rollout_ref.actor.self_distillation.distillation_topk=null
+            "$RA_FULL_LOGIT_ARG"
         )
         ;;
     *)

@@ -6,6 +6,7 @@ checkpoints/
 data/
 external/
 logs/
+outputs/
 rollouts/
 tensorboard_log/
 vlmevalkit_outputs/

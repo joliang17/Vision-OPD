@@ -119,6 +119,11 @@ class SelfDistillationConfig(BaseConfig):
     ra_no_sample_gate: bool = False
     ra_margin_scale: float = 0.5
     ra_answer_scale: float = 0.1
+    # Visual-token budgets for the offline degrade control (R_res).
+    # downsample target area = ra_ctrl_low_tokens * 28 * 28 (Qwen3-VL patch=28),
+    # matching unsup-opsd/ra_vad `_LOW_TOKENS/_UP_TOKENS`.
+    ra_ctrl_low_tokens: int = 256
+    ra_ctrl_up_tokens: int = 1536
     answer_hint_template: str = (
         "\n\nHere is a reference solution to this problem:\n"
         "{answer}\n\n"
@@ -187,6 +192,14 @@ class SelfDistillationConfig(BaseConfig):
                 raise ValueError(f"self_distillation.ra_margin_scale must be positive, got {self.ra_margin_scale}")
             if self.ra_answer_scale <= 0:
                 raise ValueError(f"self_distillation.ra_answer_scale must be positive, got {self.ra_answer_scale}")
+            if self.ra_ctrl_low_tokens <= 0:
+                raise ValueError(
+                    f"self_distillation.ra_ctrl_low_tokens must be positive, got {self.ra_ctrl_low_tokens}"
+                )
+            if self.ra_ctrl_up_tokens <= 0:
+                raise ValueError(
+                    f"self_distillation.ra_ctrl_up_tokens must be positive, got {self.ra_ctrl_up_tokens}"
+                )
         if self.teacher_always_on and not self.teacher_image_key and self.teacher_prompt_mode != "answer_hint":
             raise ValueError(
                 "self_distillation.teacher_image_key is required when teacher_always_on=True "
