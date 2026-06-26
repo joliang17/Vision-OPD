@@ -62,6 +62,13 @@ if [[ -z "${TASK_TRAIN_FILE:-}" ]]; then
     fi
 fi
 
+# degrade variant requires the offline-degraded parquet (run scripts/prepare_degraded_images.py first)
+if [[ "$EXPERIMENT" == "degrade" && ! -f "$TASK_TRAIN_FILE" ]]; then
+    echo "ERROR: degrade experiment needs $TASK_TRAIN_FILE." >&2
+    echo "       Generate it first:  python3 scripts/prepare_degraded_images.py --input data/train.parquet --output data/train_degraded.parquet" >&2
+    exit 1
+fi
+
 MODEL_NAME=$(basename "$DEFAULT_MODEL_PATH")
 EXPERIMENT_NAME="${EXPERIMENT_NAME:-Vision-OPD-${EXPERIMENT}-${MODEL_NAME}}"
 PROJECT_NAME="${PROJECT_NAME:-Vision-OPD}"
@@ -151,6 +158,17 @@ export VLLM_USE_V1=1
 export PYTHONBUFFERED=1
 export USER="${USER:-$(id -un 2>/dev/null || echo root)}"
 ulimit -c 0
+
+# --- Offline / no-tracking safety --------------------------------------------
+# Force offline mode so no HF / dataset downloads are attempted over the network.
+# The model must already be in the HF cache (MODEL_PATH resolves to the local
+# snapshot above) and training data is a local parquet.
+export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"
+export TRANSFORMERS_OFFLINE="${TRANSFORMERS_OFFLINE:-1}"
+export HF_DATASETS_OFFLINE="${HF_DATASETS_OFFLINE:-1}"
+# No wandb: stick to console + tensorboard (TRAINER_LOGGER default already excludes wandb).
+export WANDB_MODE="${WANDB_MODE:-disabled}"
+export WANDB_DISABLED="${WANDB_DISABLED:-true}"
 
 CHAT_TEMPLATE_ARGS=()
 if [[ -n "${CUSTOM_CHAT_TEMPLATE_FILE}" ]]; then
