@@ -13,11 +13,31 @@ else
 fi
 if [[ -z "${MODEL_PATH:-}" ]]; then
     MODEL_REPO_DIR="${DEFAULT_MODEL_PATH//\//--}"
-    HF_CACHE_MODEL_DIR="${HF_HOME:-$HOME/.cache/huggingface}/hub/models--${MODEL_REPO_DIR}/snapshots"
-    if [[ -d "$HF_CACHE_MODEL_DIR" ]]; then
-        MODEL_PATH="$(find "$HF_CACHE_MODEL_DIR" -mindepth 1 -maxdepth 1 -type d | sort | tail -n 1)"
-    else
-        MODEL_PATH="$DEFAULT_MODEL_PATH"
+    # Search candidate HF cache dirs in priority order; pick the FIRST snapshot dir
+    # that actually contains config.json (a complete download). This avoids using a
+    # partially-downloaded snapshot (e.g. one with only model.safetensors and no config).
+    CANDIDATE_CACHE_DIRS=(
+        "${HOME}/.cache/huggingface/hub"
+        "${HF_HOME:-}/hub"
+        "${PROJECT_ROOT}/cache/hub"
+    )
+    MODEL_PATH=""
+    for cache_dir in "${CANDIDATE_CACHE_DIRS[@]}"; do
+        snap_root="${cache_dir}/models--${MODEL_REPO_DIR}/snapshots"
+        [[ -d "$snap_root" ]] || continue
+        while IFS= read -r snap_dir; do
+            if [[ -f "${snap_dir}/config.json" && -f "${snap_dir}/tokenizer_config.json" ]]; then
+                MODEL_PATH="$snap_dir"
+                break
+            fi
+        done < <(find "$snap_root" -mindepth 1 -maxdepth 1 -type d | sort)
+        [[ -n "$MODEL_PATH" ]] && break
+    done
+    if [[ -z "$MODEL_PATH" ]]; then
+        echo "ERROR: no complete local snapshot for ${DEFAULT_MODEL_PATH} (config.json missing)." >&2
+        echo "       Searched: ${CANDIDATE_CACHE_DIRS[*]}" >&2
+        echo "       Re-download to a writable HF_HOME, or set MODEL_PATH explicitly." >&2
+        exit 1
     fi
 fi
 
@@ -173,6 +193,13 @@ ulimit -c 0
 export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"
 export TRANSFORMERS_OFFLINE="${TRANSFORMERS_OFFLINE:-1}"
 export HF_DATASETS_OFFLINE="${HF_DATASETS_OFFLINE:-1}"
+# Default HF cache to the home dir cache (where the complete snapshots live).
+# Some environments point HF_HOME at a partial project cache that lacks config.json,
+# which breaks AutoTokenizer/AutoConfig. Override with HF_HOME=... if you have a
+# complete cache elsewhere.
+if [[ -z "${HF_HOME:-}" ]]; then
+    export HF_HOME="$HOME/.cache/huggingface"
+fi
 # --- wandb (opt-in) -----------------------------------------------------------
 # Requires byted-wandb installed:  pip install -U byted-wandb -i https://bytedpypi.byted.org/simple
 # byted-wandb handles its own auth (no WANDB_API_KEY needed).
