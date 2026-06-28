@@ -3,6 +3,7 @@
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SHARED_PROJECT_ROOT="$(cd "${PROJECT_ROOT}/../.." && pwd)"
 CONFIG_NAME="vopd"
 # Model size: 4B (default) or 2B. Override with MODEL_SIZE=2B, or set MODEL_PATH directly.
 MODEL_SIZE="${MODEL_SIZE:-4B}"
@@ -18,7 +19,8 @@ if [[ -z "${MODEL_PATH:-}" ]]; then
     # partially-downloaded snapshot (e.g. one with only model.safetensors and no config).
     CANDIDATE_CACHE_DIRS=(
         "${HOME}/.cache/huggingface/hub"
-        "${HF_HOME:-}/hub"
+        "${HF_HOME:-${HOME}/.cache/huggingface}/hub"
+        "${SHARED_PROJECT_ROOT}/cache/hub"
         "${PROJECT_ROOT}/cache/hub"
     )
     MODEL_PATH=""
@@ -208,7 +210,15 @@ fi
 if [[ "${WANDB_ENABLE:-0}" == "1" ]]; then
     export WANDB_MODE="${WANDB_MODE:-online}"
     unset WANDB_DISABLED 2>/dev/null || true
-    TRAINER_LOGGER='["console","tensorboard","wandb"]'
+    if python3 - <<'PY' >/dev/null 2>&1
+import tensorboard  # noqa: F401
+PY
+    then
+        TRAINER_LOGGER='["console","tensorboard","wandb"]'
+    else
+        echo "WARNING: tensorboard is not installed; using console+wandb logger." >&2
+        TRAINER_LOGGER='["console","wandb"]'
+    fi
 else
     export WANDB_MODE="${WANDB_MODE:-disabled}"
     export WANDB_DISABLED="${WANDB_DISABLED:-true}"

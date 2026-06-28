@@ -1358,17 +1358,27 @@ class RayPPOTrainer:
 
         if use_teacher_always_on_inputs:
             teacher_image_key = self_distillation_cfg.teacher_image_key
-            if teacher_image_key not in batch.non_tensor_batch:
-                raise KeyError(f"Teacher image key `{teacher_image_key}` not found in batch.non_tensor_batch")
             ra_ctrl_mode = self_distillation_cfg.get("ra_ctrl_mode", "none")
             ra_ctrl_image_key = self_distillation_cfg.get("ra_ctrl_image_key", None)
+            student_image_key = self.config.data.get("image_key", "images")
+
+            def get_sample_images(image_key: str, sample_idx: int) -> list[Any]:
+                if image_key in batch.non_tensor_batch:
+                    images = batch.non_tensor_batch[image_key][sample_idx]
+                    if isinstance(images, np.ndarray):
+                        return images.tolist()
+                    if images is None:
+                        return []
+                    return list(images)
+                if image_key == student_image_key:
+                    return self._extract_images_from_messages(list(batch.non_tensor_batch["raw_prompt"][sample_idx]))
+                raise KeyError(f"Teacher image key `{image_key}` not found in batch.non_tensor_batch")
+
             if ra_vad_enabled and ra_ctrl_mode not in {"noimg"}:
                 if not ra_ctrl_image_key:
                     raise ValueError("RA-VAD control image key is required for this control mode.")
-                if ra_ctrl_image_key not in batch.non_tensor_batch:
-                    raise KeyError(
-                        f"RA-VAD control image key `{ra_ctrl_image_key}` not found in batch.non_tensor_batch"
-                    )
+                if ra_ctrl_image_key not in batch.non_tensor_batch and ra_ctrl_image_key != student_image_key:
+                    raise KeyError(f"RA-VAD control image key `{ra_ctrl_image_key}` not found in batch.non_tensor_batch")
             fallback_to_policy_loss = self_distillation_cfg.get("fallback_to_policy_loss_on_missing_teacher", False)
 
             teacher_input_ids_list = []
@@ -1394,13 +1404,7 @@ class RayPPOTrainer:
                 if "teacher_prompt" in batch.non_tensor_batch:
                     teacher_prompt_messages = list(batch.non_tensor_batch["teacher_prompt"][i])
 
-                teacher_images = batch.non_tensor_batch[teacher_image_key][i]
-                if isinstance(teacher_images, np.ndarray):
-                    teacher_images = teacher_images.tolist()
-                elif teacher_images is None:
-                    teacher_images = []
-                else:
-                    teacher_images = list(teacher_images)
+                teacher_images = get_sample_images(teacher_image_key, i)
                 has_teacher_images = self._teacher_images_available(teacher_images)
                 teacher_present_mask_list.append(1.0 if has_teacher_images else 0.0)
                 if not has_teacher_images:
@@ -1439,13 +1443,7 @@ class RayPPOTrainer:
                     if ra_ctrl_mode == "noimg":
                         ctrl_messages = self._remove_images_from_messages(raw_prompt_messages)
                     else:
-                        ctrl_images = batch.non_tensor_batch[ra_ctrl_image_key][i]
-                        if isinstance(ctrl_images, np.ndarray):
-                            ctrl_images = ctrl_images.tolist()
-                        elif ctrl_images is None:
-                            ctrl_images = []
-                        else:
-                            ctrl_images = list(ctrl_images)
+                        ctrl_images = get_sample_images(ra_ctrl_image_key, i)
                         if not self._teacher_images_available(ctrl_images):
                             raise ValueError(
                                 f"RA-VAD control image key `{ra_ctrl_image_key}` is empty for sample {i}."
@@ -1652,6 +1650,11 @@ class RayPPOTrainer:
         teacher_image_key = self.config.actor_rollout_ref.actor.get("self_distillation", {}).get("teacher_image_key", None)
         if teacher_image_key and teacher_image_key in batch.non_tensor_batch:
             reward_model_keys.add(teacher_image_key)
+        ra_ctrl_image_key = (
+            self.config.actor_rollout_ref.actor.get("self_distillation", {}).get("ra_ctrl_image_key", None)
+        )
+        if ra_ctrl_image_key and ra_ctrl_image_key in batch.non_tensor_batch:
+            reward_model_keys.add(ra_ctrl_image_key)
 
         # pop those keys for generation
         batch_keys_to_pop = []
