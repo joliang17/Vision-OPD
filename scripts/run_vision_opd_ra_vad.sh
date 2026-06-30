@@ -83,7 +83,9 @@ DATA_DATALOADER_NUM_WORKERS="${DATA_DATALOADER_NUM_WORKERS:-8}"
 CUSTOM_CHAT_TEMPLATE_FILE="${PROJECT_ROOT}/chat_templates/perception_chat_template_qwen35.jinja"
 
 DATA_DIR="${PROJECT_ROOT}/data"
+TASK_TRAIN_FILE_WAS_DEFAULT=0
 if [[ -z "${TASK_TRAIN_FILE:-}" ]]; then
+    TASK_TRAIN_FILE_WAS_DEFAULT=1
     if [[ "$EXPERIMENT" == "degrade" ]]; then
         TASK_TRAIN_FILE="${DATA_DIR}/train_degraded.parquet"
     else
@@ -96,6 +98,70 @@ if [[ "$EXPERIMENT" == "degrade" && ! -f "$TASK_TRAIN_FILE" ]]; then
     echo "ERROR: degrade experiment needs $TASK_TRAIN_FILE." >&2
     echo "       Generate it first:  python3 scripts/prepare_degraded_images.py --input data/train.parquet --output data/train_degraded.parquet" >&2
     exit 1
+fi
+
+# --- Answer-letter validation split ------------------------------------------
+# Enabled by default for these answer-letter VQA experiments. It keeps a fixed
+# validation subset out of training and evaluates it with a lightweight exact-
+# match reward. Disable with ANSWER_VAL_ENABLE=0.
+ANSWER_VAL_ENABLE="${ANSWER_VAL_ENABLE:-1}"
+ANSWER_VAL_SIZE="${ANSWER_VAL_SIZE:-256}"
+ANSWER_VAL_SEED="${ANSWER_VAL_SEED:-42}"
+ANSWER_VAL_BATCH_SIZE="${ANSWER_VAL_BATCH_SIZE:-16}"
+ANSWER_VAL_TEST_FREQ="${ANSWER_VAL_TEST_FREQ:-10}"
+ANSWER_VAL_BEFORE_TRAIN="${ANSWER_VAL_BEFORE_TRAIN:-True}"
+ANSWER_VAL_TRAIN_FILE="${ANSWER_VAL_TRAIN_FILE:-${DATA_DIR}/train_answer.parquet}"
+ANSWER_VAL_FILE="${ANSWER_VAL_FILE:-${DATA_DIR}/val_answer.parquet}"
+ANSWER_VAL_REWARD_FILE="${ANSWER_VAL_REWARD_FILE:-${PROJECT_ROOT}/scripts/mcq_exact_reward.py}"
+ANSWER_VAL_ARGS=()
+
+if [[ "$ANSWER_VAL_ENABLE" == "1" ]]; then
+    if [[ ! -f "$ANSWER_VAL_REWARD_FILE" ]]; then
+        echo "ERROR: answer validation reward file not found: $ANSWER_VAL_REWARD_FILE" >&2
+        exit 1
+    fi
+
+    if [[ ! -f "$ANSWER_VAL_TRAIN_FILE" || ! -f "$ANSWER_VAL_FILE" || "${DATA_DIR}/train.parquet" -nt "$ANSWER_VAL_TRAIN_FILE" || "${DATA_DIR}/train.parquet" -nt "$ANSWER_VAL_FILE" ]]; then
+        python3 "${PROJECT_ROOT}/scripts/prepare_answer_val_split.py" \
+            --input "${DATA_DIR}/train.parquet" \
+            --train-output "$ANSWER_VAL_TRAIN_FILE" \
+            --val-output "$ANSWER_VAL_FILE" \
+            --val-size "$ANSWER_VAL_SIZE" \
+            --seed "$ANSWER_VAL_SEED"
+    fi
+
+    if [[ "$TASK_TRAIN_FILE_WAS_DEFAULT" == "1" ]]; then
+        if [[ "$EXPERIMENT" == "degrade" ]]; then
+            ANSWER_VAL_DEGRADED_TRAIN_FILE="${ANSWER_VAL_DEGRADED_TRAIN_FILE:-${DATA_DIR}/train_degraded_answer.parquet}"
+            ANSWER_VAL_DEGRADED_VAL_FILE="${ANSWER_VAL_DEGRADED_VAL_FILE:-${DATA_DIR}/val_degraded_answer.parquet}"
+            if [[ ! -f "${DATA_DIR}/train_degraded.parquet" ]]; then
+                echo "ERROR: answer validation for degrade needs ${DATA_DIR}/train_degraded.parquet." >&2
+                echo "       Generate it first:  python3 scripts/prepare_degraded_images.py --input data/train.parquet --output data/train_degraded.parquet" >&2
+                exit 1
+            fi
+            if [[ ! -f "$ANSWER_VAL_DEGRADED_TRAIN_FILE" || ! -f "$ANSWER_VAL_DEGRADED_VAL_FILE" || "${DATA_DIR}/train_degraded.parquet" -nt "$ANSWER_VAL_DEGRADED_TRAIN_FILE" || "${DATA_DIR}/train_degraded.parquet" -nt "$ANSWER_VAL_DEGRADED_VAL_FILE" ]]; then
+                python3 "${PROJECT_ROOT}/scripts/prepare_answer_val_split.py" \
+                    --input "${DATA_DIR}/train_degraded.parquet" \
+                    --train-output "$ANSWER_VAL_DEGRADED_TRAIN_FILE" \
+                    --val-output "$ANSWER_VAL_DEGRADED_VAL_FILE" \
+                    --val-size "$ANSWER_VAL_SIZE" \
+                    --seed "$ANSWER_VAL_SEED"
+            fi
+            TASK_TRAIN_FILE="$ANSWER_VAL_DEGRADED_TRAIN_FILE"
+        else
+            TASK_TRAIN_FILE="$ANSWER_VAL_TRAIN_FILE"
+        fi
+    fi
+
+    ANSWER_VAL_ARGS+=(
+        data.val_files="[\"$ANSWER_VAL_FILE\"]"
+        data.val_batch_size="$ANSWER_VAL_BATCH_SIZE"
+        custom_reward_function.path="$ANSWER_VAL_REWARD_FILE"
+        custom_reward_function.name=compute_score
+        trainer.val_before_train="$ANSWER_VAL_BEFORE_TRAIN"
+        trainer.test_freq="$ANSWER_VAL_TEST_FREQ"
+        actor_rollout_ref.rollout.val_kwargs.n=1
+    )
 fi
 
 MODEL_NAME=$(basename "$DEFAULT_MODEL_PATH")
@@ -318,4 +384,5 @@ python3 -m verl.trainer.main_ppo --config-name "$CONFIG_NAME" \
     trainer.rollout_data_dir="$TRAINER_ROLLOUT_DATA_DIR" \
     "${CHAT_TEMPLATE_ARGS[@]}" \
     "${EXPERIMENT_ARGS[@]}" \
+    "${ANSWER_VAL_ARGS[@]}" \
     "${EXTRA_ARGS[@]}"
