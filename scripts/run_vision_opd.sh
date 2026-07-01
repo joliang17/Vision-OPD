@@ -13,9 +13,9 @@ set -euo pipefail
 # =============================================================================
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CONFIG_NAME="vopd"
-DEFAULT_MODEL_PATH="Qwen/Qwen3-VL-4B-Instruct"
+DEFAULT_MODEL_PATH="Qwen/Qwen3-VL-2B-Instruct"
 if [[ -z "${MODEL_PATH:-}" ]]; then
-    HF_CACHE_MODEL_DIR="${HF_HOME:-$HOME/.cache/huggingface}/hub/models--Qwen--Qwen3-VL-4B-Instruct/snapshots"
+    HF_CACHE_MODEL_DIR="${HF_HOME:-$HOME/.cache/huggingface}/hub/models--Qwen--Qwen3-VL-2B-Instruct/snapshots"
     if [[ -d "$HF_CACHE_MODEL_DIR" ]]; then
         MODEL_PATH="$(find "$HF_CACHE_MODEL_DIR" -mindepth 1 -maxdepth 1 -type d | sort | tail -n 1)"
     else
