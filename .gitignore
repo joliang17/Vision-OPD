@@ -10,3 +10,5 @@ outputs/
 rollouts/
 tensorboard_log/
 vlmevalkit_outputs/
+
+wandb/
