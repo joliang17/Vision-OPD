@@ -1,0 +1,244 @@
+<title>RA-VAD 结果总账</title>
+<style>
+:root{
+  --paper:#FAFBFC; --ink:#1A2333; --ink-soft:#3E4A5C; --ink-faint:#77839A;
+  --line:#DDE3EA; --card:#FFFFFF;
+  --accent:#2E5E8C; --accent-soft:#E8F0F7;
+  --win:#2E7D4F; --win-soft:#E7F2EB; --bad:#B4452F; --bad-soft:#F7ECE8;
+  --dim:#8A94A3; --chip-run:#8A6D1F; --chip-run-soft:#F6EFD9;
+}
+@media (prefers-color-scheme: dark){:root{
+  --paper:#151A22; --ink:#E8ECF2; --ink-soft:#B9C2CF; --ink-faint:#7C8798;
+  --line:#2A3340; --card:#1C232E;
+  --accent:#6FA3D8; --accent-soft:#1F2E3E;
+  --win:#66B588; --win-soft:#1E3227; --bad:#D98770; --bad-soft:#3A2620;
+  --dim:#66707F; --chip-run:#D8BC6A; --chip-run-soft:#332B17;
+}}
+:root[data-theme="dark"]{
+  --paper:#151A22; --ink:#E8ECF2; --ink-soft:#B9C2CF; --ink-faint:#7C8798;
+  --line:#2A3340; --card:#1C232E;
+  --accent:#6FA3D8; --accent-soft:#1F2E3E;
+  --win:#66B588; --win-soft:#1E3227; --bad:#D98770; --bad-soft:#3A2620;
+  --dim:#66707F; --chip-run:#D8BC6A; --chip-run-soft:#332B17;
+}
+:root[data-theme="light"]{
+  --paper:#FAFBFC; --ink:#1A2333; --ink-soft:#3E4A5C; --ink-faint:#77839A;
+  --line:#DDE3EA; --card:#FFFFFF;
+  --accent:#2E5E8C; --accent-soft:#E8F0F7;
+  --win:#2E7D4F; --win-soft:#E7F2EB; --bad:#B4452F; --bad-soft:#F7ECE8;
+  --dim:#8A94A3; --chip-run:#8A6D1F; --chip-run-soft:#F6EFD9;
+}
+body{background:var(--paper);color:var(--ink);font:15px/1.65 "Avenir Next","Seravek","Segoe UI",system-ui,sans-serif;margin:0;padding:0 20px 80px;}
+main{max-width:1060px;margin:0 auto;}
+header{padding:44px 0 8px;border-bottom:2px solid var(--ink);margin-bottom:8px;}
+h1{font-size:26px;margin:0 0 6px;letter-spacing:-0.01em;text-wrap:balance;}
+.sub{color:var(--ink-faint);font-size:13.5px;margin:0;}
+.eyebrow{text-transform:uppercase;letter-spacing:0.09em;font-size:11.5px;color:var(--accent);font-weight:700;margin:44px 0 4px;}
+h2{font-size:19px;margin:0 0 10px;text-wrap:balance;}
+h3{font-size:15px;margin:20px 0 6px;}
+.verdict{border-left:3px solid var(--accent);background:var(--accent-soft);padding:9px 14px;border-radius:0 6px 6px 0;font-size:14px;margin:10px 0 14px;color:var(--ink-soft);}
+.verdict strong{color:var(--ink);}
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--card);}
+table{border-collapse:collapse;width:100%;font-size:13.5px;font-variant-numeric:tabular-nums;}
+th{background:transparent;color:var(--ink-faint);font-size:11.5px;text-transform:uppercase;letter-spacing:0.05em;text-align:right;padding:9px 10px;border-bottom:2px solid var(--line);white-space:nowrap;}
+th:first-child{text-align:left;}
+td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap;}
+td:first-child{text-align:left;}
+tr:last-child td{border-bottom:none;}
+.m{font-weight:600;}
+.mm .s{display:block;font-weight:400;font-size:11.5px;color:var(--ink-faint);}
+.hl td{background:color-mix(in srgb,var(--accent-soft) 55%,transparent);}
+.w{color:var(--win);font-weight:700;}
+.b{color:var(--bad);}
+.d{color:var(--dim);}
+.chip{display:inline-block;font-size:11px;font-weight:700;padding:1px 8px;border-radius:10px;vertical-align:1px;margin-left:6px;}
+.c-ok{background:var(--win-soft);color:var(--win);}
+.c-run{background:var(--chip-run-soft);color:var(--chip-run);}
+.c-bad{background:var(--bad-soft);color:var(--bad);}
+.c-wait{background:var(--accent-soft);color:var(--accent);}
+.note{font-size:12.5px;color:var(--ink-faint);margin:8px 2px 0;}
+.rules{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:12px;}
+.rule{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 14px;font-size:13px;color:var(--ink-soft);}
+.rule b{display:block;color:var(--ink);margin-bottom:3px;font-size:13.5px;}
+a{color:var(--accent);}
+code{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;background:var(--accent-soft);padding:1px 5px;border-radius:4px;}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+</style>
+<main>
+<header>
+  <h1>RA-VAD 结果总账</h1>
+  <p class="sub">对比锐化自蒸馏 · 面向 paper 的干净数字（首版 2026-07-17 · 最近更新 2026-07-19 由 devbox 汇入 β 因果两臂 / FINAL-WAVE 曲线 / M1 / no-think 对照 / 8B）。
+  过程与修正史见 <a href="https://claude.ai/code/artifact/eae14885-255a-4cc1-a24e-ddf73859bc1a">存档报告</a>；
+  官方 pipeline 对照见 <a href="https://claude.ai/code/artifact/b264c2df-d232-4567-9e04-24ef9932635f">评测口径矩阵</a>。</p>
+</header>
+
+<div class="eyebrow">0 · 口径冻结</div>
+<h2>读任何表之前</h2>
+<div class="rules">
+  <div class="rule"><b>评测口径（唯一）</b>VLMEvalKit vllm_server，temp=0 / presence_penalty=1.5 / max_new 4096，judge=gpt-5.4-mini；ZoomBench 走 canonical native（v3-fixed 规则 + GPT judge）。max_new=4096 已由 L1/L2 共 8 组 @8192 配对验证（全部 ±0.6pp，含最啰嗦的 OPSD 幻觉版）——<strong>截断假设关闭</strong>。跨 harness 数字只引用、不进同表。</div>
+  <div class="rule"><b>训练 len 规则</b>2B=6144 · Qwen3-VL-4B=<strong>4096</strong>（6144 不仅 OOM，且即使不 OOM 也损伤训练——P19 仲裁 +3.55pp）· Qwen3.5=6144。len 不同的格子禁止同表 Δ。</div>
+  <div class="rule"><b>噪声带（实测，07-19 扩充）</b>同配置双跑：9-bench 单项 ±1–2pp、ZoomBench ±1.3pp；<strong>2B composite 换 seed 摆动可达 ±3pp</strong>（P23/X16 两语料一致）——主表 2B 行以 3-seed mean±std 报告（默认/1234/777 已训齐，eval 汇入中）。≤2pp 的消融差异一律视为噪声带内。</div>
+  <div class="rule"><b>污染标记 ⊘</b>HR8K 推理失败污染实测拉低 6–8pp；带 ⊘ 的数字禁止引用（现存 3 份：answer-hint×repo / answer-hint×virl39k / visionopd 的 HR8K）。</div>
+</div>
+
+<div class="eyebrow">1 · 主表（逐 benchmark 明细，Hallu=三均 aAcc/fAcc/qAcc）</div>
+<h2>Base vs OPSD vs ours · 按 scale 分表，<span class="w">绿色加粗</span>=该 scale 列最优（本 setting 暂不比 GRPO）</h2>
+<div class="verdict"><strong>一句话：</strong>每 scale 四行（base / OPSD / ours-weighted / ours-uniform，后者为终局配置）。2B：uniform 除 POPE/HR8K 外全列最优（对 base 最高 +6.9）；4B（len4096 定稿）：weighted/uniform 双双超 base（+1.7/+1.0），Hallu 三均 +6 级别；Qwen3.5：weighted 拿 MathVista/Hallu/Zoom，uniform 拿 BLINK/MMStar/MMBench（但有 len 口径差待仲裁）。<strong>weighted vs uniform 各 scale 差异全在噪声带——方法对 w_t 不敏感是结论本身</strong>。</div>
+
+<h3>Qwen3-VL-2B × virl39k 90step</h3>
+<div class="tbl"><table>
+<thead><tr><th>模型</th><th>BLINK</th><th>MMStar</th><th>MMBench</th><th>V*</th><th>MathVista</th><th>HR4K</th><th>HR8K</th><th>POPE</th><th>Hallu 三均</th><th>Zoom</th></tr></thead>
+<tbody>
+<tr><td class="mm m">base<span class="s">未训练</span></td><td>53.02</td><td>57.47</td><td>78.09</td><td>72.77</td><td>62.50</td><td>71.13</td><td>67.38</td><td class="w">88.76</td><td>51.60</td><td>42.49</td></tr>
+<tr><td class="mm">OPSD answer-hint<span class="s">E1</span></td><td>55.29</td><td>60.13</td><td>73.11</td><td>75.39</td><td>62.10</td><td>74.38</td><td>72.75</td><td>88.58</td><td>51.88</td><td>38.46</td></tr>
+<tr><td class="mm">ours · weighted<span class="s">contrast-标准（带 w_t+gate）</span></td><td>58.18</td><td>63.87</td><td>78.18</td><td class="w">76.44</td><td>67.00</td><td>76.63</td><td class="w">72.88</td><td>88.36</td><td>52.93</td><td>41.89</td></tr>
+<tr class="hl"><td class="mm m">ours · uniform<span class="s">E2（终局配置）</span></td><td class="w">59.92</td><td class="w">64.07</td><td class="w">79.81</td><td class="w">76.44</td><td class="w">67.30</td><td class="w">77.25</td><td>72.25</td><td>88.65</td><td class="w">54.39</td><td class="w">43.55</td></tr>
+</tbody></table></div>
+<p class="note">uniform vs weighted：差异全部 ≤2pp（噪声带内，消融 C）；uniform 为终局配置故作主行。uniform vs base 明显项：BLINK +6.9 / MMStar +6.6 / HR4K +6.1 / MathVista +4.8 / HR8K +4.9 / V* +3.7。<br /><strong>2-seed mean±std（07-19，第3个seed待出）：</strong>默认(P26) 70.04 / seed777(S1) 67.01 → <strong>mean 68.53 ± 2.14</strong>（7-bench均）——噪声幅度不小，主表报数须带 std；seed1234 训练已完、eval 待出，补齐后升 3-seed。</p>
+
+<h3>Qwen3-VL-4B × virl39k 90step <span class="chip c-ok">len4096 口径（仲裁定案 07-18）</span></h3>
+<div class="tbl"><table>
+<thead><tr><th>模型</th><th>BLINK</th><th>MMStar</th><th>MMBench</th><th>V*</th><th>MathVista</th><th>HR4K</th><th>HR8K</th><th>POPE</th><th>Hallu 三均</th><th>Zoom</th></tr></thead>
+<tbody>
+<tr><td class="mm m">base</td><td>67.18</td><td>68.93</td><td class="w">84.11</td><td>80.63</td><td>73.90</td><td>79.88</td><td>73.75</td><td class="w">89.43</td><td>54.81</td><td class="w">44.14</td></tr>
+<tr><td class="mm">OPSD answer-hint<span class="s">X6</span></td><td>57.55</td><td>64.67</td><td>83.33</td><td>79.06</td><td>66.10</td><td>76.00</td><td>72.37</td><td>87.45</td><td>50.57</td><td>41.78</td></tr>
+<tr><td class="mm">ours · weighted<span class="s">P19（4B 主行）</span></td><td class="w">67.28</td><td class="w">70.60</td><td>82.04</td><td class="w">83.25</td><td class="w">77.10</td><td class="w">81.50</td><td class="w">78.25</td><td>88.64</td><td>60.49</td><td class="d">待跑</td></tr>
+<tr class="hl"><td class="mm m">ours · uniform<span class="s">X11（终局配置）</span></td><td class="w">67.28</td><td>70.00</td><td>82.82</td><td>82.20</td><td>76.70</td><td>79.88</td><td>76.38</td><td>88.71</td><td class="w">61.14</td><td>43.08</td></tr>
+</tbody></table></div>
+<p class="note">✅ 4B 异常解除：weighted(P19) 77.15 / uniform(X11) 76.46，均 &gt; base 75.48（+1.7/+1.0），两者差 0.69 在噪声带；<strong>Hallu 三均 +5.7~+6.3</strong> 是最大单项。
+根因：<strong>len6144 损伤 4B 训练</strong>（同配置差 +3.55pp；X5 独立重跑 −0.08pp 排除 eval 问题；<strong>L1 长度探针再排除 eval 截断假设</strong>——@8192 重评 X5 73.33 vs @4096 73.58，加长上限救不回）——X5/X6@6144 降级为 len 消融证据，4B 一切训练 len 固定 4096。X11 Zoom=43.08 已补。</p>
+
+<h3>Qwen3.5-4B × virl39k 90step</h3>
+<div class="tbl"><table>
+<thead><tr><th>模型</th><th>BLINK</th><th>MMStar</th><th>MMBench</th><th>V*</th><th>MathVista</th><th>HR4K</th><th>HR8K</th><th>POPE</th><th>Hallu 三均</th><th>Zoom</th></tr></thead>
+<tbody>
+<tr><td class="mm m">base<span class="s">vanilla · HR8K 干净口径</span></td><td>66.91</td><td>72.67</td><td>80.76</td><td class="w">84.29</td><td>80.70</td><td class="w">86.12</td><td class="w">82.00</td><td>83.11</td><td>62.45</td><td>52.43</td></tr>
+<tr><td class="mm">OPSD answer-hint<span class="s">X2</span></td><td>64.86</td><td>72.13</td><td>78.44</td><td class="w">84.29</td><td>77.90</td><td>81.25</td><td>77.75</td><td class="w">88.70</td><td>61.01</td><td>45.33</td></tr>
+<tr class="hl"><td class="mm m">ours · weighted<span class="s">X1(T3a) · len6144</span></td><td>66.23</td><td>75.33</td><td>82.73</td><td>82.72</td><td class="w">82.30</td><td>85.12</td><td>78.25</td><td>88.39</td><td class="w">63.59</td><td class="w">53.73</td></tr>
+<tr><td class="mm">ours · uniform<span class="s">X12 · ⚠len4096（与 weighted 的 len 不同，Δ 仅参考）</span></td><td class="w">68.12</td><td class="w">75.53</td><td class="w">86.00</td><td>83.25</td><td>81.70</td><td>84.62</td><td>80.00</td><td>88.44</td><td>62.26</td><td>53.49</td></tr>
+</tbody></table></div>
+<p class="note">weighted vs vanilla 明显项：POPE +5.3 / MMStar +2.7 / MMBench +2.0 / Hallu三均 +1.1 / Zoom +1.3；uniform(X12) 多列更高但其 len=4096 与 weighted@6144 存在口径差——Qwen3.5 的 len 对照（类似 4B P19 仲裁）尚未做，暂不下"uniform 更好"结论。V* 单项摆动 ±6.8（见消融 F），差 ≤1.6 不足为凭。<br /><strong>FINAL-WAVE 曲线（W1-3，07-19）：</strong>uniform×unfiltered step90/120/150 = <strong>79.18 / 78.70 / 78.95</strong>——90步后基本走平、120略降150微升，峰值不明确后移，与 2B(FC1) 曲线一起看 max-step 选择。</p>
+<div class="verdict"><strong>⚡ no-think 对照（07-18，叙事翻案）：</strong>base 开 thinking（HRBench think 率 ~88.6%）而 ours 训后天然 no-think——存在 talk-budget 混杂。关掉 base 的 thinking 后（<code>enable_thinking=False</code>，6 数据集）：<strong>同口径下 ours 六项全胜 base</strong>（BLINK +1.3 / MMStar +2.3 / V* +0.5 / HR4K <strong>+3.7</strong> / HR8K <strong>+4.3</strong> / POPE +1.8，均 +2.35）——base 在 HRBench 的"优势"几乎全部来自 thinking（关掉后 HR4K −4.7 / HR8K −7.0）。paper 建议双呈现：vs think-base（base 全力）+ vs no-think-base（公平 talk-budget）。</div>
+
+<h3>Qwen3.5-2B × virl39k 90step <span class="chip c-run">ours eval 待 mlx</span></h3>
+<div class="tbl"><table>
+<thead><tr><th>模型</th><th>BLINK</th><th>MMStar</th><th>MMBench</th><th>V*</th><th>MathVista</th><th>HR4K</th><th>HR8K</th><th>POPE</th><th>Hallu 三均</th><th>Zoom</th></tr></thead>
+<tbody>
+<tr><td class="mm m">base<span class="s">vanilla（07-18 本机全套，HR8K 已去污染 0 失败）</span></td><td>60.55</td><td>67.20</td><td>75.77</td><td>80.63</td><td>74.90</td><td>74.00</td><td>72.88</td><td>91.89<sup>†</sup></td><td>49.96</td><td>43.91</td></tr>
+<tr class="hl"><td class="mm">ours contrast-标准<span class="s">step90 已训完（8卡，contrast 路径首通 Qwen3.5-2B）</span></td><td class="d" colspan="10" style="text-align:center">eval 已排 mlx（`contrast_std_qwen35_2b_virl39k_step90`）</td></tr>
+</tbody></table></div>
+<p class="note"><sup>†</sup> POPE 为手算 exact-match（该 run 的脚本判分 bug 输出 0，预测串是干净 yes/no；与其他行的 VLMEvalKit 判分口径可能差 ~1pp 量级，回填 ours 时用同一手算口径对比）。</p>
+
+<h3>Qwen3-VL-8B × virl39k 90step <span class="chip c-run">base(N1)/OPSD(N3a) eval 待排</span></h3>
+<div class="tbl"><table>
+<thead><tr><th>模型</th><th>BLINK</th><th>MMStar</th><th>MMBench</th><th>V*</th><th>MathVista</th><th>HR4K</th><th>HR8K</th><th>7-bench 均</th></tr></thead>
+<tbody>
+<tr><td class="mm m">base</td><td class="d" colspan="8" style="text-align:center">N1 待评（8B 行进主表的唯一 blocker）</td></tr>
+<tr><td class="mm">OPSD answer-hint<span class="s">N3a 已训</span></td><td class="d" colspan="8" style="text-align:center">eval 待排</td></tr>
+<tr class="hl"><td class="mm m">ours · uniform×unfiltered<span class="s">step90（终局配置）</span></td><td>70.38</td><td>74.07</td><td>86.86</td><td>87.43</td><td>77.90</td><td>84.12</td><td>79.25</td><td class="m">80.00</td></tr>
+</tbody></table></div>
+<p class="note">间接参照（跨 harness 仅方向）：官方 Vision-OPD 论文 8B base V* 84.82 / HR4K 79.63 / HR8K 75.25——ours 三项均在其上。@8192 长度探针（L2f）78.90，与 @4096 差 −1.1 属单臂波动，待 N1 配对后归入 L 系总表。</p>
+
+<p class="note">unfiltered 最终口径替换行（P9/P15/P16/P22/P24/P25 产物）在 Stage V 验证门通过后整体切换；E9 已证 filter 影响 ±1pp（ours 系全 scale 稳健，见消融 F）。</p>
+
+<h3>Qwen3-VL-8B × virl39k(unfiltered) 90step <span class="chip c-run">base(N1) 待 mlx——单行暂列</span></h3>
+<div class="tbl"><table>
+<thead><tr><th>模型</th><th>BLINK</th><th>MMStar</th><th>MMBench</th><th>V*</th><th>MathVista</th><th>HR4K</th><th>HR8K</th><th>POPE</th><th>Hallu 三均</th></tr></thead>
+<tbody>
+<tr class="hl"><td class="mm m">ours · uniform<span class="s">FINAL-WAVE 计划外加点（8B, 8卡 bs32 一次过零OOM）</span></td><td>70.38</td><td>74.07</td><td>86.86</td><td>87.43</td><td>77.90</td><td>84.13</td><td>79.25</td><td>88.60</td><td>60.69</td></tr>
+</tbody></table></div>
+<p class="note">7-bench 均 80.0——全项目最高单行分数，5 底座 scale 矩阵（2B/4B/Qwen3.5-2B/Qwen3.5-4B/8B）第五点。base(N1) 与 ours-weighted 行仍缺，出数后补 base-vs-ours 差值行；L2f @8192 探针已测该 ckpt（78.90，见消融 F 邻近脚注）。</p>
+
+<div class="eyebrow">2 · 消融</div>
+<h2>A · α 与 gating（2B × virl39k 90step）</h2>
+<div class="verdict"><strong>一句话：</strong>α_c∈[0,0.5] 与 gate 开关全在噪声带内，α_c=2 明显变差——<strong>机制对超参不敏感，默认配置已近最优</strong>；「保守 vs 标准」的差异主要不来自 α。</div>
+<div class="tbl"><table>
+<thead><tr><th>配置</th><th>BLINK</th><th>MMStar</th><th>MMBench</th><th>V*</th><th>MathVista</th><th>HR4K</th><th>HR8K</th><th>Hallu 三均</th><th>Zoom</th></tr></thead>
+<tbody>
+<tr class="hl"><td>ours：α_c=1 + gate</td><td>58.18</td><td>63.87</td><td>78.18</td><td>76.44</td><td>67.0</td><td>76.63</td><td>72.88</td><td>52.93</td><td>41.89</td></tr>
+<tr><td>α_c=1 无gate（X4）</td><td>58.23</td><td>62.40</td><td>78.52</td><td>74.87</td><td>66.8</td><td>76.38</td><td>72.25</td><td>54.34</td><td>41.07</td></tr>
+<tr><td>α_c=0.5 无gate（X3）</td><td>56.65</td><td>62.87</td><td>78.35</td><td>77.49</td><td>68.1</td><td>76.38</td><td>73.50</td><td>54.67</td><td>43.43</td></tr>
+<tr><td>α_c=2 无gate（X15）</td><td class="b">53.39</td><td>60.93</td><td>77.66</td><td>77.49</td><td class="b">62.7</td><td>74.50</td><td>71.75</td><td class="b">50.33</td><td>43.43</td></tr>
+</tbody></table></div>
+
+<h3>B · KL 方向（divergence α_div）</h3>
+<div class="verdict"><strong>一句话：</strong>forward(0) ≈ JSD(0.5) &gt; reverse(1)——<strong>forward KL 是正确默认，越偏 mode-seeking 越差</strong>；JSD 首评"暴跌"系 judge 429 事故，已重判平反。</div>
+<div class="tbl"><table>
+<thead><tr><th>方向</th><th>7-bench 均</th><th>Zoom</th><th>状态</th></tr></thead>
+<tbody>
+<tr class="hl"><td>forward（主线）</td><td>70.68</td><td>41.89</td><td>✅</td></tr>
+<tr><td>JSD α_div=0.5</td><td>69.74</td><td>41.89</td><td>✅ 重判后（Hallu 三均缺，重判仅回填 aAcc）</td></tr>
+<tr><td>reverse α_div=1</td><td class="b">68.31</td><td>41.18</td><td>✅</td></tr>
+</tbody></table></div>
+
+<h3>C · w<sub>t</sub> 逐 token 权重（uniform-weight 对照，3 scale）</h3>
+<div class="verdict"><strong>一句话（07-18 len 对齐后定稿）：</strong>三 scale 的 uniform−ours 差：2B +0.33 / 4B <strong>−0.69</strong> / Qwen3.5 +0.29——全部在噪声带内。「w<sub>t</sub> 权重必要」（repo 数据 −1.68pp）与「uniform 严格更好」（X11 的 +2.87 系 len 混淆假象）<strong>两个方向的强 claim 都不成立</strong>；w<sub>t</sub> 定性为无显著作用的 inherited 组件。</div>
+<div class="tbl"><table>
+<thead><tr><th>scale</th><th>ours（带 w_t）</th><th>uniform（去 w_t）</th><th>Δ</th><th>状态</th></tr></thead>
+<tbody>
+<tr><td>2B（E2）</td><td>70.68</td><td>71.01</td><td>+0.33</td><td>✅ 噪声带内</td></tr>
+<tr><td>4B（X11 vs P19，len 已对齐@4096）</td><td>77.15</td><td>76.46</td><td>−0.69</td><td>✅ 噪声带内</td></tr>
+<tr><td>Qwen3.5（X12 vs X1）</td><td>78.95</td><td>79.24</td><td>+0.29</td><td>✅ 噪声带内</td></tr>
+</tbody></table></div>
+
+<h3>D · guarded tilting（β mask 与 EOS 豁免）<span class="chip c-ok">因果两臂定案 07-19</span></h3>
+<div class="verdict"><strong>一句话（升级为全项目最强机制证据）：</strong>β mask <strong>判「留」——两臂续训因果实锤</strong>：β=0 与 β=0.1 唯一变量为 β，同步续训到 200 步；β=0 在 150–200 区间<strong>灾难性全面崩溃</strong>（Zoom 单调 41.89→31.01→27.93→<strong>23.67</strong>；step150 9-bench：MathVista −19.9 / BLINK −10.4 / MMStar −12.5 / Hallu −6.3），β=0.1 对照全程平稳（Zoom 40–42 震荡、9-bench 无系统性下滑）。机制解释闭环：forward-KL mass-covering + EMA 反馈环累积放大无界 log-ratio 的 target 污染，β 把每步漂移限制在 teacher 可信支撑集内。90 步内 β=0 仅 −1.78pp——<strong>β 的价值在扩展训练窗口，短程消融看不到</strong>。EOS 豁免（X14）接近 no-op，保留为工程默认。</div>
+<div class="tbl"><table>
+<thead><tr><th>ZoomBench</th><th>step90</th><th>step150</th><th>step180</th><th>step200</th></tr></thead>
+<tbody>
+<tr><td class="mm">β=0（P31）</td><td>41.89</td><td class="b">31.01</td><td class="b">27.93</td><td class="b">23.67</td></tr>
+<tr class="hl"><td class="mm m">β=0.1（P21 对照）</td><td>41.89</td><td>40.12</td><td class="w">42.25</td><td>40.83</td></tr>
+</tbody></table></div>
+<p class="note">β=0 的 step180 只有 4/9 项（checkpoint 评测中被别机 prune 误删，永久缺失；step150/200 完整）。P21 的 9-bench 同样全程稳定（step180 7均 70.36 / step200 70.99 vs step90 70.68）。</p>
+
+<h3>E · ctrl 分支设计（repo 数据口径，2B step62）</h3>
+<div class="verdict"><strong>一句话：</strong>black（黑图保问题）&gt; qtext（保图换问题，−2.66）&gt; 纯 EMA/noimg——<strong>ctrl 必须移除视觉信息</strong>；qtext 的退化集中在纯视觉感知类（四象限净差 +163，Forensic/Visual_Similarity 占 BLINK 净差 72%）。black+qtext oracle union 上界 +6.8pp → 「双 ctrl」候选实验。</div>
+
+<h3>F · 数据与 seed 敏感性（filtered vs unfiltered 全对照，07-18 齐）</h3>
+<div class="verdict"><strong>一句话：</strong>ours 两变体对 filter <strong>稳健</strong>（2B/4B 差 ≤1pp、Qwen3.5 +1.6 反升）；<strong>OPSD 对数据高度敏感</strong>——2B unfiltered 崩到 62.28（根因=hint 依赖幻觉 12.6%，S2a 归因），4B unfiltered 反而 +4.1。seed 摆动：weighted×unfiltered 换 seed −2.8pp（P23，超噪声带；X16 filtered 同 seed −3.0 一致复现）→ 主表 2B 行报 3-seed mean±std——<strong>默认(P26)/seed1234(S1)/seed777 三个 run 已全部训完</strong>，seed 系 eval（W4 等）汇入中。</div>
+<div class="tbl"><table>
+<thead><tr><th>7-bench 均</th><th>filtered</th><th>unfiltered</th><th>Δ(unf−fil)</th><th>备注</th></tr></thead>
+<tbody>
+<tr><td class="mm m">2B ours·weighted</td><td>70.68</td><td>70.68（E9）</td><td>±0.00</td><td>完全持平</td></tr>
+<tr><td class="mm">2B ours·weighted seed1234</td><td class="d">X16 待核</td><td>67.88（P23）</td><td class="b">vs 默认seed −2.80</td><td>⚠ 超噪声带——unfiltered 下 seed 敏感，mean±std 必要性的直接证据</td></tr>
+<tr><td class="mm">2B ours·uniform seed777</td><td class="d">—</td><td>67.01（W4/S1）</td><td class="b">vs 默认seed −3.03</td><td>与 weighted 分支的 seed 摆动同量级（−2.80~−3.03），unfiltered+2B 是种子最敏感的格子，3-seed mean±std 已列入 2B 主表</td></tr>
+<tr><td class="mm m">2B ours·uniform</td><td>71.01（E2）</td><td>70.04（P26）</td><td>−0.97</td><td>噪声带内</td></tr>
+<tr><td class="mm">2B OPSD answer-hint</td><td>67.59（E1）</td><td class="b">62.28（V-e3）</td><td class="b">−5.31</td><td><strong>崩溃已归因（S2a）</strong>：hint 依赖幻觉 12.6% vs filtered 2.9%（凭空引用"reference answer"）——privileged-hint 训练的 train-test mismatch 本征缺陷，黑图 ctrl 结构性免疫；S2b 换 seed 复现中</td></tr>
+<tr><td class="mm m">4B ours·weighted</td><td>77.15（P19）</td><td>77.45（V-e1）</td><td>+0.30</td><td>噪声带内</td></tr>
+<tr><td class="mm">4B ours·uniform</td><td>76.46（X11）</td><td>76.45（P27）</td><td>−0.01</td><td>完全持平</td></tr>
+<tr><td class="mm">4B OPSD answer-hint</td><td>71.30（X6）</td><td>75.39（P24）</td><td class="w">+4.09</td><td>OPSD 的数据敏感性反向表现（unfiltered 反升至 ≈base 75.48）——与 2B 崩溃合看：OPSD 对数据分布不稳定，ours 稳定</td></tr>
+<tr><td class="mm">Qwen3.5 OPSD answer-hint</td><td>76.65（X2·6144）</td><td>76.65（W5·6144）</td><td>±0.00</td><td><strong>完全持平</strong>——OPSD 在 Qwen3.5 scale 同样对 unfiltered 鲁棒，与 4B 一致；"2B 独特脆弱、更大 scale 均鲁棒"整体叙事再获一证据点</td></tr>
+<tr><td class="mm m">Qwen3.5 ours·weighted</td><td>78.95（X1@6144）</td><td class="w">80.56（V-e2@6144）</td><td class="w">+1.61</td><td>方向有利，略超噪声带</td></tr>
+</tbody></table></div>
+<p class="note">种子噪声参照：X7 种子对（Qwen3.5 保守）7均差 1.0pp、单项 V* ±6.8/HR8K ±2.1；小样本基准单项差 &lt;7pp 不足为凭。8B uniform×unfiltered 已训完（301829143 计划外加点，eval 待 mlx）——w_t/scale 曲线将增至 4 个底座。</p>
+
+<div class="eyebrow">3 · 训练动态</div>
+<h2>步数扫描与崩溃边界（2B ours × virl39k）<span class="chip c-ok">曲线出齐 07-19</span></h2>
+<div class="verdict"><strong>一句话：</strong>weighted×filtered 曲线 90 后到 200 步<strong>全程 plateau（70.4–71.4）无劣化</strong>——峰值 ~120（+0.7）但选点不敏感；终局配置（uniform×unfiltered）曲线 2B <strong>完全平坦</strong>（三点差 &lt;0.15pp）、4B 轻微 120 峰（+0.87）。<strong>"为什么 90 步"的答案 = 固定预算 + plateau-robust，有数据背书</strong>（选点纪律：不得按全 suite argmax 换 headline，见 paper_notes §7.79）。437 崩溃（β=0.1 也逃不过的远端反馈环）与 β=0 的 150 步早崩（消融 D）共同刻画安全区结构。</div>
+<div class="tbl"><table>
+<thead><tr><th>7-bench 均</th><th>30</th><th>60</th><th>90</th><th>120</th><th>150</th><th>180</th><th>200</th><th>437</th></tr></thead>
+<tbody>
+<tr><td class="mm">weighted×filtered（主扫描线）</td><td>69.62</td><td>69.61</td><td>70.68</td><td class="w">71.36</td><td>71.05</td><td>70.36</td><td>70.99</td><td class="b">58–64 崩溃</td></tr>
+<tr class="hl"><td class="mm m">uniform×unfiltered 2B（终局配置）</td><td class="d">—</td><td class="d">—</td><td>70.04</td><td>70.14</td><td>70.11</td><td class="d">—</td><td class="d">—</td><td class="d">—</td></tr>
+<tr><td class="mm">uniform×unfiltered 4B（终局配置）</td><td class="d">—</td><td class="d">—</td><td>76.45</td><td class="w">77.32</td><td>76.92</td><td class="d">—</td><td class="d">—</td><td class="d">—</td></tr>
+</tbody></table></div>
+<p class="note">Qwen3.5 终局曲线三点（W1-3）eval 在跑；10 步粒度双线细曲线（FC1 ours vs FC4 OPSD，含逐 step hint 幻觉率）素材已训齐、eval 待排（FCE）。</p>
+
+<div class="eyebrow">4 · 诊断（motivation）</div>
+<h2>为什么要把对比信息写进 target</h2>
+<div class="verdict"><strong>一句话：</strong>旧设计把 lp_hi−lp_ctrl 只当权重用，但权重最高十分位上 teacher-student KL 仅 <strong>0.0007 nats</strong>（比 hi-ctrl 差距小 ~1800×）——在给不存在的信号加权；EMA 分解证实早期收益 ~83% 来自自蒸馏正则化本身（纯 EMA 67.79 vs noimg 68.20 vs base 65.78）。→ 对比信息必须进 target 本身，这就是 contrast-sharpened target 的动机。uniform 反转（消融 C）与该诊断自洽。</div>
+<h3>M1 · "模型忽视视觉证据"定量（intro 数字，07-18 出）</h3>
+<div class="verdict"><strong>一句话：</strong>2B base 在 POPE 上真图换黑图后<strong>69.6% 的答案纹丝不动</strong>（黑图条件下还能"答对"71.4%——语言先验泄漏实锤；真图 91.0）；VStar 不变率 39.3%（acc 74.9→34.6）。产物：<code>analysis_outputs/m1_probe/{pope,vstar}_2b_base.json</code>（n=500/191，greedy 双条件）。</div>
+<h3>M2 · privileged-hint 的本征缺陷（S2a 归因，07-18 出）</h3>
+<div class="verdict"><strong>一句话：</strong>answer-hint OPSD 训出的模型在 eval（无 hint）时<strong>凭空引用"reference answer"并朝想象答案推理</strong>——unfiltered 版 12.6% vs filtered 版 2.9%（4.3×），文本连贯、0 API 失败、judge 无辜，= privileged-hint 训练的 train-test mismatch 本征缺陷；黑图 ctrl 无信息可依赖、结构性免疫。S2b 换 seed 复现中；FC4 细曲线将给出幻觉率随训练步数的过程曲线。</div>
+
+<div class="eyebrow">5 · 指针</div>
+<h2>去哪找细节</h2>
+<p class="note" style="font-size:13.5px;">
+存档报告（全部过程/修正史/官方论文对照表）：<a href="https://claude.ai/code/artifact/eae14885-255a-4cc1-a24e-ddf73859bc1a">ra_vad_contrast_report</a> ·
+官方 pipeline 复刻矩阵：<a href="https://claude.ai/code/artifact/b264c2df-d232-4567-9e04-24ef9932635f">eval_pipeline_matrix</a> ·
+设置详录：<code>docs/experiment_settings_contrast_standard_virl39k_90step.md</code> ·
+paper 素材：<code>docs/paper_notes.md</code> ·
+任务台账：<code>docs/queued_experiments_20260713.md</code> ·
+qtext 四象限：<code>docs/qtext_quadrant_analysis_20260716.md</code></p>
+</main>
