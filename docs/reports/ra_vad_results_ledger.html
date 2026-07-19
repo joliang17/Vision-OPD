@@ -75,7 +75,7 @@ code{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;background:var(--
 <div class="eyebrow">0 · 口径冻结</div>
 <h2>读任何表之前</h2>
 <div class="rules">
-  <div class="rule"><b>评测口径（唯一）</b>VLMEvalKit vllm_server，temp=0 / presence_penalty=1.5 / max_new 4096，judge=gpt-5.4-mini；ZoomBench 走 canonical native（v3-fixed 规则 + GPT judge）。max_new=4096 已由 L1/L2 共 8 组 @8192 配对验证（全部 ±0.6pp，含最啰嗦的 OPSD 幻觉版）——<strong>截断假设关闭</strong>。跨 harness 数字只引用、不进同表。</div>
+  <div class="rule"><b>评测口径（唯一）</b>VLMEvalKit vllm_server，temp=0 / presence_penalty=1.5 / max_new 4096，judge=gpt-5.4-mini；ZoomBench 走 canonical native（v3-fixed 规则 + GPT judge）。max_new=4096 已由 L1/L2 共 8 组 @8192 配对验证（全部 ±0.6pp，含最啰嗦的 OPSD 幻觉版）——<strong>截断假设关闭</strong>。<span style="color:var(--bad);">仅内部存档，不进 paper</span>（07-19 用户指示）。跨 harness 数字只引用、不进同表。</div>
   <div class="rule"><b>训练 len 规则</b>2B=6144 · Qwen3-VL-4B=<strong>4096</strong>（6144 不仅 OOM，且即使不 OOM 也损伤训练——P19 仲裁 +3.55pp）· Qwen3.5=6144。len 不同的格子禁止同表 Δ。</div>
   <div class="rule"><b>噪声带（实测，07-19 扩充）</b>同配置双跑：9-bench 单项 ±1–2pp、ZoomBench ±1.3pp；<strong>2B composite 换 seed 摆动可达 ±3pp</strong>（P23/X16 两语料一致）——主表 2B 行以 3-seed mean±std 报告（默认/1234/777 已训齐，eval 汇入中）。≤2pp 的消融差异一律视为噪声带内。</div>
   <div class="rule"><b>污染标记 ⊘</b>HR8K 推理失败污染实测拉低 6–8pp；带 ⊘ 的数字禁止引用（现存 3 份：answer-hint×repo / answer-hint×virl39k / visionopd 的 HR8K）。</div>
@@ -150,8 +150,8 @@ code{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;background:var(--
 <p class="note">7-bench 均 80.0——全项目最高单行分数，5 底座 scale 矩阵（2B/4B/Qwen3.5-2B/Qwen3.5-4B/8B）第五点。base(N1) 与 ours-weighted 行仍缺，出数后补 base-vs-ours 差值行；L2f @8192 探针已测该 ckpt（78.90，见消融 F 邻近脚注）。</p>
 
 <div class="eyebrow">2 · 消融</div>
-<h2>A · α 与 gating（2B × virl39k 90step）</h2>
-<div class="verdict"><strong>一句话：</strong>α_c∈[0,0.5] 与 gate 开关全在噪声带内，α_c=2 明显变差——<strong>机制对超参不敏感，默认配置已近最优</strong>；「保守 vs 标准」的差异主要不来自 α。</div>
+<h2>A · α 消融（2B × virl39k 90step）<span class="chip c-run">⚠ 下表为旧口径（weighted×filtered），FA1/FA2 eval 后整表替换</span></h2>
+<div class="verdict"><strong>一句话：</strong>α_c∈[0,0.5] 全在噪声带内，α_c=2 明显变差——机制对 α 不敏感、默认 α=1 已近最优。<strong>07-19 用户指正：表内 "ours: α_c=1 + gate" 是旧 weighted 配置标签——终局 ours = uniform（无 w_t 无 gate），gate 概念在 paper 中不再出现</strong>；终局口径 α 三点 = P26(α=1) / FA1(α=0.5) / FA2(α=2)，已训完待评。</div>
 <div class="tbl"><table>
 <thead><tr><th>配置</th><th>BLINK</th><th>MMStar</th><th>MMBench</th><th>V*</th><th>MathVista</th><th>HR4K</th><th>HR8K</th><th>Hallu 三均</th><th>Zoom</th></tr></thead>
 <tbody>
