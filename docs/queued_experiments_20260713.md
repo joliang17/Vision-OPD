@@ -1,5 +1,13 @@
 # 排队实验 — 2026-07-13
 
+## 🧪 Beyond-paper 新方向立项（2026-07-19 22:3x，用户直接下达；详见 `docs/plan_beyond_paper_20260719.md`）
+
+两条线：**G 系**（ours×GRPO 合体，能否>纯GRPO）+ **Q 系**（black×qtext 双 ctrl）。全部以终局配置为基口径。
+- **G1 🏃 301832790 已启动**：GRPO×virl39k(unfiltered) 1ep，init=P26 ours-uniform step90（零代码序贯合体），
+  ckpt名 `Vision-OPD-grpo-from-ours-uniform-Qwen3-VL-2B-virl39k-UNFILTERED1img-1ep-trial301783374`，~5h。
+  判定线：vs GRPO-from-base 1ep（71.66，filtered 参考线）composite ≥+1pp 或 Zoom 回血。
+- 后续（G1b 严格对照 / G2 反向序贯 / Q0 ensemble 探针 / Q1 ctrl 课程 / Q2 双 tilt target）按 plan 文档决定树推进，认领前先看该文档防撞。
+
 ## 🔁 [2026-07-19] 设备重开：301761390 → 301832756
 
 用户重新开了一台设备替换之前的 301761390。**新 trial_id = 301832756**（hostname
