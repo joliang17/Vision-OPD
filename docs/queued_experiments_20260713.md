@@ -1,5 +1,24 @@
 # 排队实验 — 2026-07-13
 
+## ⚠️ [301832756 07-20 22:1x] 机器专属坑：本机 user-local python 栈被污染，plain Qwen3-VL 训练需 PYTHONNOUSERSITE=1
+
+**根因**：设备重开后排查 QS1（Qwen3.5）环境时，在发现 conda qwen35 之前先 `pip install --user` 装了
+torch2.10.0/transformers5.5.0 到 user-local（后来发现多余，conda 已够用，但没清理）。这污染了本机
+**默认 python**（不带 PYTHONNOUSERSITE 时）——S2c 首次启动即在 `flash_attn` import 处崩：
+`undefined symbol: ...c10_cuda_check_implementation...`（系统自带 flash_attn 编译给系统 torch2.8.0，
+与 user-local 的 torch2.10.0 ABI 不兼容，而默认 python 优先加载 user-local）。
+
+**影响范围**：只影响本机（301832756）**不走 conda 的 plain 训练/推理**（普通 Qwen3-VL 2B/4B/8B，
+`run_experiment_baseline.sh`/`run_experiment_contrast_standard.sh` 不显式传 conda）。**Qwen3.5 系列用
+conda qwen35 不受影响**（conda 环境隔离，QS1/N4 都已验证过）。
+
+**修复**：验证 `PYTHONNOUSERSITE=1 python3 -c "import torch,transformers,flash_attn"` 干净通过
+（torch2.8.0+transformers4.57.0+flash_attn2.8.1 互相 ABI 匹配）——**本机今后所有 plain Qwen3-VL 训练
+命令都要显式加 `PYTHONNOUSERSITE=1`**（S2c 已用此修复重启）。未清理 user-local 污染源（`~/.local/lib/python3.11/site-packages/torch,transformers`）
+是因为清理本身有风险（可能牵连别的东西），显式加环境变量是更安全的绕过方式。
+
+# 排队实验 — 2026-07-13
+
 ## ✅ [301832756 07-20 21:4x] N4（Qwen3.5-9B）完成，接 S2c（seed777）
 
 **N4 训完**：90/90，step30/60/90 已 merge → `Vision-OPD-contrast-standard-uniformweight-Qwen3.5-9B-virl39k-UNFILTERED1img-90step-trial301832756`。
@@ -518,9 +537,15 @@ ra_divergence_alpha=0.0  full_logit_distillation=True  distillation_topk=null
 **排班 v2（07-20 去冲突后，4 机；α=0 baseline 已 armed 在 301832790 不动，最高优先）**：
 | 机器 | 当前 | 训练队列（按序） | 备注 |
 |---|---|---|---|
-| **301832790** | α=0 baseline armed（等 GPU） | ① α=0 matched baseline（最高优，已 armed）→ ② **P36** dynamic α（本机 α validator 已放宽，加 schedule 顺手） | α=0 完了接 P36 |
-| **301761390** | 清空/待命 | ① **P33** no-anchor（高优）→ ② **P35** VA-OPD（配置已就绪，复用下方 degrade parquet） | P35 用 301829143 生成的 degrade parquet |
-| **301829143** | QL1（Qwen3.5 len4096）在跑/收尾 | ① QL1 收尾 → ② **P34** ctrl 消融：**先 `prepare_degraded_images.py --method spatial-scale --scale 0.1` 生成 degrade parquet（P34+P35 共用，生成一次）** + 加 gaussnoise ctrl mode → 跑 noimg/degrade/gaussnoise 三 run | degrade parquet 是 P34/P35 共享 artifact |
+| **301832790** | α=0 baseline armed（等 GPU） | ① α=0 matched baseline（已 armed）→ ② **P36** dynamic α | ⚠️ P33 已挪走给 301761390，本机的 P33 串行 driver 作废，α=0 后直接接 P36 |
+| **301761390** | 清空/待命 | ① **P33** no-anchor 🔥🔥**最高优，立即 fresh 起**（wrapper 就绪）→ ② **P35** VA-OPD（配置就绪，复用 degrade parquet） | P33 从 301832790 队尾挪来，独占一台立即跑 |
+| **301829143** | QL1 ✅ → S3/QA(用户直接下达) 🏃 → P34 已挂链 | ① QL1 收尾 ✅ → ② **S3**(第三seed=42三角验证,与301832756的S2c=777互补，凑4-seed) + **QA1/QA2**(Qwen3.5-4B α消融验证2B结论是否transfer) 🏃 → ③ **P34** ctrl 消融 🏃已挂链 | 详见下方 07-20 21:5x 更新 |
+
+**📢 [301829143 07-20 21:5x] P34 前置工作完成，driver 已挂链**：
+1. **`gaussnoise` ctrl mode 代码已实现**（`ray_trainer.py` 加 `_make_noise_images_like`：`np.random.normal(127.5,64)`→clip→uint8→PIL，与 `_make_black_images_like` 同构；主逻辑加 `if ra_ctrl_mode=="gaussnoise"` 分支；`workers/config/actor.py` validator 白名单+`ra_ctrl_image_key`必填集合都加了 gaussnoise）。已用 `SelfDistillationConfig` 构造 + `py_compile` 冒烟验证通过。
+2. **发现并修复 `prepare_degraded_images.py` 的一个真 bug**：脚本对 HF Image 类型条目只读 `entry['path']` 当文件路径 `Image.open()`，但本项目 virl39k parquet 的图片是内嵌 `entry['bytes']`（`path` 只是不可解析的缓存产物字符串）——直接跑会 100% `FileNotFoundError`。已加 `load_source_image()`（优先读 bytes，走 `io.BytesIO`，无 bytes 才退化到 path），两个 degrade 函数签名从吃路径改成吃已打开的 `Image`。5 行冒烟测试验证通过（正确生成 292×210 的降质图）后跑全量。**这是 P34/P35 共用的基础设施 bug，P35（VA-OPD 复现）若还没跑到这步也受益于此修复**。
+3. **degrade parquet 全量生成中**：`data/virl39k_train_noimg_unfiltered_1img_degraded.parquet`（10% spatial-scale，论文口径），图片存 `data/images_degraded_unfiltered/`，日志 `logs/prepare_degraded_images_20260720.log`（CPU-only，与 GPU 训练并行跑，36039 行预计几分钟内跑完）。
+4. **P34 三个 run 已挂链**（driver `logs/p34_driver_trial301829143.log`，等 S3/QA 完 + degrade parquet 就绪后自动串行）：P34a=noimg（`EXPERIMENT=noimg`现成分支）、P34b=degrade（`EXPERIMENT=degrade`+新生成parquet）、P34c=gaussnoise（`EXPERIMENT=black`默认+trailing override `ra_ctrl_mode=gaussnoise`）。三者均为 P26 配方（uniform×unfiltered×2B×len6144×90步）只改 ctrl_mode，对照现有 black(P26,66.64)。ckpt名 `Vision-OPD-contrast-uniform-{noimg,degrade,gaussnoise}-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301829143`，各自动 merge 30/60/90，独立失败不阻塞后段。
 | **301832756** | eval backlog（N3b/N3c/FC 曲线）在跑 | eval 跑完后加入训练池（接队列里最靠前的未认领项） | 当前专职 eval |
 
 ⚠️ **degrade parquet 共享**：P34 的 degrade 组和 P35（VA-OPD）用同一份论文口径 degrade 图（10% spatial-scale），301829143 生成一次，P35 直接复用同 NAS 路径，别重复生成。
@@ -542,7 +567,7 @@ ra_kd_loss 透传；`dp_actor.py:1369` 从 config 读；`config/actor.py`+`actor
 
 | # | 任务 | 配置 | 状态 |
 |---|---|---|---|
-| P33 | **纯对比 target（no-anchor）2B × unfiltered，90步** | 终局配置 + `ra_contrast_anchor_coef=0.0`（α 仍 1.0、β 仍 0.1）；**save_freq=10 多存 checkpoint**（观察崩溃是否比现在的 150 步更早——纯比值更激进，可能提前失控，本身是有价值观察）；len6144/bs32 | 🏃 **301832790 已认领并挂链（07-20 21:4x）**：driver `scripts/run_p33_noanchor_after_alpha0_20260720.sh`，**串在 α=0 matched baseline 之后**（等 α0 ckpt 到 step90 → 8卡空 → fresh 启动）。ckpt名 `Vision-OPD-contrast-noanchor-uniform-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301832790`，anchor_coef=0 validator 已 smoke-test。训完 merge 30/60/90，eval 待排 |
+| P33 | **纯对比 target（no-anchor）2B × unfiltered，90步** | 终局配置 + `ra_contrast_anchor_coef=0.0`（α 仍 1.0、β 仍 0.1）；**save_freq=10 多存 checkpoint**（观察崩溃是否比现在的 150 步更早）；len6144/bs32；wrapper `scripts/run_p33_pure_contrast_noanchor_2b.sh` | 🔥🔥 **最高优先（07-20 用户拍板，超过 α=0 baseline）——立即在最先空出的 8 卡机 fresh 启动，不再串在任何任务之后**。📢 **改分配 301761390**（它空着，只剩 P35 在后；别再等 301832790 的 α=0 队尾）。⚠️ 301832790 的 `run_p33_noanchor_after_alpha0_20260720.sh` 串行 driver **作废/让位**（避免双跑；若它已先起则以先产出 checkpoint 的为准、另一台跳过）。ckpt名 `Vision-OPD-contrast-noanchor-uniform-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial<trialid>`，anchor_coef=0 validator 已 smoke-test。训完 merge 30/60/90 + eval（提优先） |
 
 **判读**：与主配置 ours(2B 66.64) 对比——(a) 打平或更好 → 锚可去，方法更接近纯 CD 更简洁；
 (b) 更差/更早崩 → 锚是必要设计，写进 ablation 一行"expert anchor prevents ratio-driven degeneration"。
@@ -558,7 +583,7 @@ ra_kd_loss 透传；`dp_actor.py:1369` 从 config 读；`config/actor.py`+`actor
 
 | # | 任务 | 说明 | 状态 |
 |---|---|---|---|
-| S2c | 2B answer-hint × unfiltered，90步，`data.seed=777` | 与 V-e3(默认,62.28★疑坏)/S2b(1234,68.44) 凑 3 seed；若 S2c 也 ≥base 则确认 V-e3 是孤立坏训练 | 🏃 **301832756 已启动（07-20 21:48，8卡，N4 后接）**：driver `scripts/run_s2c_301832756.sh`，ckpt名 `Vision-OPD-baseline-seed777-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301832756`，自动 merge 30/60/90 |
+| S2c | 2B answer-hint × unfiltered，90步，`data.seed=777` | 与 V-e3(默认,62.28★疑坏)/S2b(1234,68.44) 凑 3 seed；若 S2c 也 ≥base 则确认 V-e3 是孤立坏训练 | 🏃 **301832756 已启动（07-20 21:48，8卡，N4 后接）**：driver `scripts/run_s2c_301832756.sh`，ckpt名 `Vision-OPD-baseline-seed777-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301832756`，自动 merge 30/60/90。**⚠️ 与 301829143 的 S3（同目的、seed=42，用户直接下达）并行不冲突**——两个不同 seed 值、不同 ckpt 名，合起来是 4-seed（默认/1234/42/777）而非重复劳动 |
 
 ★ V-e3 checkpoint 保留但主表弃用；如需复盘可查其 loss 曲线是否异常。
 
@@ -581,8 +606,9 @@ ra_kd_loss 透传；`dp_actor.py:1369` 从 config 读；`config/actor.py`+`actor
 |---|---|---|---|
 | QL1 | **Qwen3.5-4B len 仲裁**：uniform × unfiltered @ **len4096**，90步 | P28 配方只改 len（与 P28@6144 的 W1 构成单因子 len 对）；conda qwen35 | ✅ **301829143 训完（07-20 01:14，90/90，2h55m/8卡）**，step30/60/90 已 merge+prune → `Vision-OPD-contrast-standard-uniformweight-Qwen3.5-4B-virl39k-UNFILTERED1img-90step-len4096-trial301829143`，**eval 可排（mlx，conda qwen35 shim，建议 `ql1_uniform_qwen35_4b_unfiltered_len4096_step90`）**。出数后与 W1（同配方@6144，79.18）做 4B 4096-vs-6144 的 Qwen3.5 len 仲裁 |
 | QS1 | **Qwen3.5-4B seed 复跑**：uniform × unfiltered @6144 × `data.seed=1234`，90步 | Qwen3.5 行 mean±std（**稳健性报告，不得挑 seed 换数**）；conda | 🔧 **改道 len4096（07-20 09:0x，301832756）**：@6144 两次同签名 backward OOM（59.68GiB，step31 原始/step50 降 rollout池0.55 后）——与 seed=1234 换的数据顺序踩到长序列批次有关（W1 默认seed@6144 跑满150步无恙），非环境问题。已改用项目记录的 Qwen3.5 安全长度 **len4096** 重跑（driver `scripts/run_qs1_len4096_301832756.sh`），ckpt名加 `-len4096` 后缀。⚠️ **与 W1(@6144) 不再是单因子对照**——mean±std 报告需标注 len 差异，或等 QL1（同配方@4096 默认seed）出数后按"同 len 配对"二次核对 |
-| FCE-merge | FC1 中间 10 档补 merge（10-140） | 本机产物 | 📢 **分配 301832790**（若已做完忽略） |
-| FCE-eval | 细曲线 eval：FC1(ours)+FC4(OPSD) 各 15 点 × 7-bench 快组 + 逐 step hint 幻觉率提取 | ~30 个快 eval | 📢 **mlx 池提到第 3 位**（N1、FA 评之后） |
+| FCE-merge | **FC1 + FC4 各补 merge 中间 10 档**（10/20/40/50/70/80/100/110/130/140；30/60/90/120/150 已 merge） | 20 个 merge，CPU/1卡快 | 📢 **分配 301832756**（本机现跑 N3b/N3c/FC 老批，接着做）：FC1+FC4 各补 merge 中间 10 档 |
+| FCE-eval | **细曲线 eval：FC1(ours 2B uniform×unfiltered)+FC4(OPSD 2B) 各 15 点(step10-150每10步)**，**每点跑全 7 项 benchmark**：BLINK / MMStar / V* / MathVista / HR4K / HR8K / Hallu（三均）——**逐 benchmark 存好，用户之后自选 report 单 benchmark 曲线 or 7-bench avg 曲线** + 逐 step hint 幻觉率(BLINK xlsx 提 reference-answer 率) | 30 eval × 7 bench（新 suite，与主表 Acc 同口径）；先跑哪几个都行但**最终每点 7 项要齐**，别只留快组 | 📢 **分配 301832756**（FCE-merge 后接跑，高优先）：30 点 × 7 项，逐 benchmark 存。产出 ours vs OPSD 双线细曲线（可切单项/均值两种视图） |
+| **FCE-prune（省 800G）** | FCE-eval 出全数字后删 FC1+FC4 中间 checkpoint | 两 keepall 目录各 398G，共 **~800G**（`...contrast-uniform...2B...150step-keepall-trial301783374` + `...baseline...2B...150step-keepall-trial301783374`） | 📢 **301832756**（FCE-eval 数字回填后自己删）：**勿在 eval 出全前删**；删时中间点删掉、保留报告用的点，回收 ~800G |
 
 **排班表 v3**：301832790 = FCE-merge → 待命接溢出 eval；301829143 = N3 收尾 → QL1；301761390 = QS1 立即；mlx = N1 → FA1-4 → FCE-eval → W/N3/seed 系收尾。
 
@@ -653,7 +679,7 @@ inherited component；若 scale 间分裂，如实写 scale/数据依赖。
 | X16 | **P17 产物**（seed=1234 复跑）step90：`...seed1234...-trial301761390/global_step_90` | `seed1234_2b_virl39k_step90` | 与主表 ours(70.68) 并排=含数据顺序的 run-to-run variance 点。✅ **mlx 已提交（07-17 ~19:5x）**：`dc0e1d562c52afbc`/`f34bebc98798f237`（tokenizer 坑已修，第 7 次）。注意：checkpoints/ 里另有一个 `...seed1234-...UNFILTERED1img...` 目录，本次评的是**非 UNFILTERED** 版（与 P17 行声明的 ckpt 名一致），如果实际训练用的是 UNFILTERED 目录请纠正我 |
 | X7 | **T3b 双跑种子对**：`...conservative...-trial301783374` 与 `...-trial301761390` 各 step90（或 301783374 版的实际终点） | `cons_qwen35_virl39k_step90_seedA/B` | 两份都评、并排记录=首个实测 run-to-run 噪声点 |
 | X8 | E4 余量：P1 产物（`...baseline-2B...virl39k-90step-trial301829143/global_step_90`）的 **WeMath+MathVerse_MINI** | 沿用 E1 的 MODEL_NAME | appendix verbosity 分析对照行 |
-| X9(M1) | **M1 motivation 定量**：base 2B 真图 vs 黑图答案不变比例 + 两条件准确率，POPE/VStar 各 500 样本 | ✅ **脚本已就绪（07-17 21:0x devbox 写好 + Codex review 修复 8 处：TSV 列结构实测核实、MCQ/yesno 提取加固到 judge-fix 级、图像加载容错、token 长度统计）**：一条命令 `bash scripts/run_m1_probe.sh`（1 GPU，~1h；`NUM_SAMPLES`/`BASE2B`/`DEVICE` 可环境变量覆盖），产出 `analysis_outputs/m1_probe/{pope,vstar}_2b_base.json`（summary 含 unchanged_rate/acc_hi/acc_ctrl） | ⏳ **待认领（只差跑）**——unchanged_rate 就是 paper intro 的 todo 数字；acc_ctrl（黑图准确率高于随机=语言先验泄漏）是第二个 motivation 数字 |
+| X9(M1) | **M1 motivation 定量**：base 2B 真图 vs 黑图答案不变比例 + 两条件准确率，POPE/VStar 各 500 样本 | ✅ **脚本已就绪 + 已跑完（本条为过期重复记录，实际结果见文档最上方 07-18 16:1x 条目：POPE 不变率 69.6%/acc_ctrl 71.4%，VStar 不变率 39.3%）**，产出 `analysis_outputs/m1_probe/{pope,vstar}_2b_base.json` 已确认存在 | ✅ **已完成，勿重复认领/重跑**（301829143 07-20 22:0x 核实文件存在后修正本条状态） |
 | X10 | **V1-b**：换 merged step30/60 checkpoint 做 teacher 重跑 target-decoding 可视化（脚本 `scripts/visualize_target_decoding.py`，修 Question 列 bug 后） | — | 论文附录案例素材 |
 | X11/X12 | P11/P12 产物 step90（训完后） | `uniformweight_4b/qwen35_virl39k_step90` | uniform-weight 跨 scale 判定 |
 
