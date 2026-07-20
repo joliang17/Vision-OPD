@@ -90,12 +90,51 @@ finished"是假象（12/12 报错退出，非真完成）。共享 NAS 输出目
 | S2b (answerhint seed1234) | 56.02 | 60.73 | 74.23 | 75.92 | 64.70 | 76.25 | 71.25 | 88.74 | 65.62 | 68.44 |
 | N3a (8B OPSD) | 67.81 | 70.20 | 85.22 | 85.34 | 77.30 | 81.12 | 74.62 | 88.58 | 73.50 | 77.37 |
 
+**⚠️ 重要发现：S2b（68.44）未复现 V-e3 崩溃（62.28）**，比 base(66.05) 还高 +2.39——已在
+`docs/reports/ra_vad_results_ledger.html`（artifact `8177abba`）加了红色警示框标记 open question，
+M2"本征缺陷"强 claim 需要复核，不建议直接引用进 paper。
+
+## 🆕 [301829143 07-20 18:0x] 用户下达两个后续任务，已排队（GPU 被 wave2 批量 eval 占满，接力等待）
+
+**任务 S3（第三种子三角验证）**：用户怀疑 V-e3（默认seed 崩溃 62.28）本身训练可能有问题，而不只是
+"单次种子事故"——现有两点（默认崩/seed1234正常）不足以下结论，加第三个独立种子（`data.seed=42`，全新
+未用过的值）来判断是 1/3 还是 2/3 崩溃。配方同 S2b/P22（answer-hint × unfiltered，2B，90步），
+ckpt名 `Vision-OPD-baseline-seed42-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301829143`。
+
+**任务 QA1/QA2（Qwen3.5-4B α 消融）**：2B 上 α 曲线已出（0.5→66.68 / 1.0(主配置)→70.68 / 2.0→67.83，
+α=1 明确峰值）——用户想先验证这个"α=1 是峰值"的结论在 Qwen3.5-4B scale 上是否成立，再讨论要不要固化
+为跨 scale 默认。对齐 P28/W1 的口径（uniform×unfiltered，**len6144**，conda qwen35，90步，与 W1=79.18
+同一评测点可比），只改 `ra_contrast_alpha`：
+- QA1 = α=0.5 → ckpt名 `Vision-OPD-contrast-uniform-alpha05-Qwen3.5-4B-virl39k-UNFILTERED1img-90step-trial301829143`
+- QA2 = α=2.0 → ckpt名 `Vision-OPD-contrast-uniform-alpha20-Qwen3.5-4B-virl39k-UNFILTERED1img-90step-trial301829143`
+
+**状态**：🏃 **301829143 已挂接力链**（`logs/s3_qa_driver_trial301829143.log`），等 wave2 批量 eval
+（12 项）跑完 GPU 释放后自动串行执行 S3 → QA1 → QA2，各自动 merge 30/60/90，每段独立失败不阻塞后段。
+预计 S3 ~1.5-2h，QA1/QA2 各 ~3-4h（Qwen3.5-4B@6144 规格），全部完成约明晨。
+
 **α 曲线三点齐**（FA1/主配置 α=1.0=P26 70.68/FA2）：66.68 / 70.68 / 67.83——**α=1.0 是峰值**，两侧都掉分，
 非单调。**β 消融**（FA3 69.11 filtered口径 vs 本次 unfiltered 68.93，方向一致，β=0 仍系统性弱于主配置约
 1.5-2pp，X17"留"结论在 unfiltered 口径复核成立）。**EOS 豁免**（FA4 70.54，接近主配置 70.68，Δ=-0.14
 噪声带内，此消融基本 no-op）。**3-seed 2B 行**：默认(P26,70.68) / seed777(?) / seed1234(68.20)——待 seed777
 数字凑齐 mean±std。**8B 行**：base 76.39 vs OPSD(N3a) 77.37 = **+0.98**（OPSD 8B 上小幅领先，待 uniform-8B
 即 uniform_8b_unfiltered_step90 出数后三行对比）。
+
+## 🆕 [301832756 07-20 18:2x] N4：Qwen3.5-9B 加入底座矩阵（用户下达）
+
+**背景**：用户问"基于当前配置在 Qwen/Qwen3.5-9B 上跑一组训练"——底座矩阵扩为 6 个
+（Qwen3-VL{2B,4B,8B} + Qwen3.5{2B,4B,**9B**}）。`Qwen/Qwen3.5-9B` 已确认存在于 HF（9.65B 参数，qwen3_5
+架构，本地此前未缓存）。
+
+**N4**：下载 `Qwen/Qwen3.5-9B` → `cache/Qwen3.5-9B`（本机 7890 代理已验证）→ **主配置训练**（uniform×unfiltered，
+alpha=1.0 默认，90步，conda qwen35 env，8卡）。ckpt名 `Vision-OPD-contrast-standard-uniformweight-Qwen3.5-9B-virl39k-UNFILTERED1img-90step-trial301832756`。
+🏃 **301832756 已启动（07-20 18:27，driver `scripts/run_n4_qwen35_9b_301832756.sh`）**，自动 merge 30/60/90。
+
+**len 选择**：直接用 **len4096**（不试 6144）——QS1 已实证 Qwen3.5-4B @6144 是 seed 依赖型 OOM
+（59.68GiB 签名，非环境问题，见上文 QS1 记录）；9B 比 4B 更大、全词表蒸馏显存更紧，从安全长度起步，
+不重演一次 OOM→retry 的弯路。
+
+**范围说明**：本轮只跑"ours"行（主配置）；OPSD（answer-hint）行未跑——如需凑 6 底座×(ours+OPSD)完整矩阵，
+需用户确认后再补 N4b。
 
 ## 🔁 [2026-07-19] 设备重开：301761390 → 301832756
 
@@ -417,6 +456,16 @@ seed1234 67.65/67.88）；**真正的新发现 = 2B run-to-run variance ≈ ±3p
 | （FA 批状态确认） | 方案 B 确认 ⇒ **FA1-4 维持原分配执行**（FA1/FA2→301832790，FA3/FA4→301829143），P28（uniform Qwen3.5 unfiltered 150步）继续，FINAL-WAVE 续训 P26/P27→150 继续 | 消融/主表全部在 uniform×unfiltered 口径上收口 | 按原计划 |
 | **FC 批（fine-curve 重训，2026-07-18 用户下达："慢慢让3个机器跑"——低优先级，机器空了就领）** | 背景：中间 ckpt 被 prune，细粒度曲线需同配置重训。**全部 = 终局配置（uniform × unfiltered）× 150步 × save_freq=10 × ⚠️ 训完暂缓 prune（保留全部 15 个存档，明确豁免 CLAUDE.md 的 prune 政策——本批的存在意义就是中间点）** | 曲线纪律：每条细曲线整条取自该 run 自身（含它自己的 90/120/150），不与 P26/P27 原 run 端点混拼（GPU 非确定性 ±3pp）。**eval 先不排**——等 FINAL-WAVE 三点粗曲线出来、用户决定加密密度后再对 FC 产物按需提交（可能只评 60-150 段） | |
 | FC1 | 2B uniform×unfiltered，150步，len6144，save_freq=10 不 prune | 磁盘注意：15 个 2B 存档 ≈ 400GB，确认配额余量再跑；空间紧可 60 步前的先删（曲线重点在 60-150） | ✅ **完成（07-18 22:34，301832790，8卡 fresh 150/150 一次通过）**：全部 15 档 save_freq 存档保留，step30/60/90/120/150 已 merge → `Vision-OPD-contrast-uniform-Qwen3-VL-2B-virl39k-UNFILTERED1img-150step-keepall-trial301783374`。**FINAL-WAVE 2B 细曲线就绪，5 点 eval 待 mlx**（MODEL_NAME 建议 `fc1_uniform_unfiltered_step{30,60,90,120,150}`；中间未 merge 档如需加密度另说）。**✅ [mlx session 07-19 22:0x] 5 点已提交**（9-bench，未按 FCE 的 7-bench-only 省成本规范——那是给 15 点密集版的，这 5 点已 merge 直接跑全套）：step30=`afbea15d78f34587` / step60=`88f24f9bb4a4b096` / step90=`7aadf755a019831d` / step120=`ac6388c9e3700969` / step150=`84614e62ee2b08ef` |
+
+## 🆕 S2c — 2B OPSD×unfiltered 第三 seed（2026-07-20 用户拍板：V-e3 疑似坏训练）
+
+背景：V-e3（default seed）2B OPSD×unfiltered = 62.28（低于 base，S2a 曾归因 hint 依赖 M2）；**S2b（seed1234）= 68.44 反而高于 base，未复现崩溃**。用户判定 **V-e3 那次 training 有问题**，主表改用 S2b(68.44)，M2 本征缺陷叙事撤销。为坐实，补第三 seed。
+
+| # | 任务 | 说明 | 状态 |
+|---|---|---|---|
+| S2c | 2B answer-hint × unfiltered，90步，`data.seed=777` | 与 V-e3(默认,62.28★疑坏)/S2b(1234,68.44) 凑 3 seed；若 S2c 也 ≥base 则确认 V-e3 是孤立坏训练 | ⏳ 待认领（📢 任意空闲 8 卡机；4B/Qwen3.5 无需，仅 2B 补） |
+
+★ V-e3 checkpoint 保留但主表弃用；如需复盘可查其 loss 曲线是否异常。
 
 ## 🆕 Q1 — Qwen3.5-2B 主表两行 eval（2026-07-20 用户问，ckpt 已训完只差 eval）
 
