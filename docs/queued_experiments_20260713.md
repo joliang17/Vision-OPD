@@ -52,6 +52,14 @@ diagnostic smoke test（`c3fc00dc8643972a`）交叉验证，结果未出。
   判定线：vs GRPO-from-base 1ep（71.66，filtered 参考线）composite ≥+1pp 或 Zoom 回血。
 - 后续（G1b 严格对照 / G2 反向序贯 / Q0 ensemble 探针 / Q1 ctrl 课程 / Q2 双 tilt target）按 plan 文档决定树推进，认领前先看该文档防撞。
 
+## ✅ [301832756 07-20 17:4x] 本地 eval 20 项批次盘点 + 认领剩余 12 项
+
+盘点发现 8/10 单点项（N1/FA1-4/S1-seed1234/S2b/N3a）**已被别的机器跑完**（`_server_qwen3vl2b_temp0_4096_generic`
+命名口径，9/9 分文件齐）。剩 **12 项未跑**：N3b/N3c（Qwen3.5-2B，需 conda+shim）+ FC1×5（2B ours 细曲线）+
+FC4×5（2B OPSD 细曲线）。本机 8 卡全空，已认领并启动：driver `scripts/run_local_batch_20260720_301832756.sh`，
+两波并行（wave1: N3b/N3c+FC1[30,60,90]+FC4[30,60] 共8路；wave2: FC1[120,150]+FC4[120,150] 共4路），
+沿用相同命名口径避免撞名，judge nproc=2 防止本机内部 8 路合打 429。
+
 ## 🔁 [2026-07-19] 设备重开：301761390 → 301832756
 
 用户重新开了一台设备替换之前的 301761390。**新 trial_id = 301832756**（hostname
