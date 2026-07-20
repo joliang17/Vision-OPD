@@ -1,5 +1,33 @@
 # 排队实验 — 2026-07-13
 
+## ✅ [301832756 07-20 21:4x] N4（Qwen3.5-9B）完成，接 S2c（seed777）
+
+**N4 训完**：90/90，step30/60/90 已 merge → `Vision-OPD-contrast-standard-uniformweight-Qwen3.5-9B-virl39k-UNFILTERED1img-90step-trial301832756`。
+**底座矩阵扩为 6 个**（Qwen3-VL{2B,4B,8B} + Qwen3.5{2B,4B,9B}），N4 是唯一的 ours 行，OPSD 行未跑（低优，需用户确认再补）。
+**eval 待 mlx/本地**（mlx 20 项批次刚出过系统性失败，建议先按本地 eval 口径提交，`n4_uniformweight_qwen35_9b_unfiltered_step90`）。
+
+**接力**：GPU 一空出就认领了 S2c（第三 seed 点，验证 V-e3 是否孤立坏训练），已启动，8卡。
+
+12 项本地 eval 批次盘点：另一台机器仍在活跃跑（fc4_opsd 系列刚才还在写），本机不重复插手。
+
+
+## 🎯 [301832790 07-20 18:4x 用户 paper 请求] α=0 matched baseline（主表关键对照）
+
+> 用户原话："比 reweight baseline 更重要的是一个**完全 matched 的 α=0 baseline**"。
+> **含义**：终局 ours-uniform 行（主表 highlight）逐项完全一致，**唯一变量 = contrast tilt 项 α: 1.0 → 0.0**。
+> 保留 `ra_uniform_weight=True` / β=0.1 plausibility mask / EOS-豁免 / forward-KL / EMA teacher /
+> unfiltered virl39k / 90 步 / len6144 / 8 卡。α=0 时 `build_contrast_target` 退化为
+> `log_softmax(lp_hi 限制在 plausibility set)` = 纯温度软化 EMA-teacher 自蒸馏（无对比锐化）。
+> **意义**：ours vs 本行的差 = 对比项本身的净贡献，隔离掉 reweight / 自蒸馏，比 reweight baseline 更能
+> 回答"对比锐化到底有没有用"。
+>
+> **代码**：`verl/workers/config/actor.py` validator 已放宽（`ra_contrast_alpha<=0` → `<0`，α=0 允许、
+> α<0 仍拒；已 smoke-test 验证）。driver `scripts/run_alpha0_matched_baseline_20260720.sh`（armed，
+> 等 G1 9-bench + D 组 eval 腾出 8 卡后 fresh 启动，训完自动 merge 30/60/90）。
+> ckpt = `Vision-OPD-contrast-alpha0-uniform-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301832790`。
+> **状态**：🏃 armed（driver 已挂起等 GPU）。训完后 9-bench+Zoom 主口径 eval → 回填主表 2B 板块 +
+> paper_notes.md §3 + 总账 ledger 消融区。
+
 ## ✅ [301832756 07-20 12:0x] QS1 完成（len4096），本机再次清空
 
 `Vision-OPD-contrast-uniform-seed1234-Qwen3.5-4B-virl39k-UNFILTERED1img-90step-len4096-trial301832756`
@@ -457,13 +485,80 @@ seed1234 67.65/67.88）；**真正的新发现 = 2B run-to-run variance ≈ ±3p
 | **FC 批（fine-curve 重训，2026-07-18 用户下达："慢慢让3个机器跑"——低优先级，机器空了就领）** | 背景：中间 ckpt 被 prune，细粒度曲线需同配置重训。**全部 = 终局配置（uniform × unfiltered）× 150步 × save_freq=10 × ⚠️ 训完暂缓 prune（保留全部 15 个存档，明确豁免 CLAUDE.md 的 prune 政策——本批的存在意义就是中间点）** | 曲线纪律：每条细曲线整条取自该 run 自身（含它自己的 90/120/150），不与 P26/P27 原 run 端点混拼（GPU 非确定性 ±3pp）。**eval 先不排**——等 FINAL-WAVE 三点粗曲线出来、用户决定加密密度后再对 FC 产物按需提交（可能只评 60-150 段） | |
 | FC1 | 2B uniform×unfiltered，150步，len6144，save_freq=10 不 prune | 磁盘注意：15 个 2B 存档 ≈ 400GB，确认配额余量再跑；空间紧可 60 步前的先删（曲线重点在 60-150） | ✅ **完成（07-18 22:34，301832790，8卡 fresh 150/150 一次通过）**：全部 15 档 save_freq 存档保留，step30/60/90/120/150 已 merge → `Vision-OPD-contrast-uniform-Qwen3-VL-2B-virl39k-UNFILTERED1img-150step-keepall-trial301783374`。**FINAL-WAVE 2B 细曲线就绪，5 点 eval 待 mlx**（MODEL_NAME 建议 `fc1_uniform_unfiltered_step{30,60,90,120,150}`；中间未 merge 档如需加密度另说）。**✅ [mlx session 07-19 22:0x] 5 点已提交**（9-bench，未按 FCE 的 7-bench-only 省成本规范——那是给 15 点密集版的，这 5 点已 merge 直接跑全套）：step30=`afbea15d78f34587` / step60=`88f24f9bb4a4b096` / step90=`7aadf755a019831d` / step120=`ac6388c9e3700969` / step150=`84614e62ee2b08ef` |
 
+## 🎓 P34/P35/P36 — 与老师讨论新增的三组消融（2026-07-20，devbox 排班，高优）
+
+### P34 · ctrl 图像消融（black vs noimg vs degrade vs gaussian-noise，2B×unfiltered 90步）
+**问题**：black 是最好的 ctrl 么？终局配置下重测。四种 ctrl：
+| 变体 | ra_ctrl_mode | 状态 |
+|---|---|---|
+| black（现 ours=P26） | `black` | ✅ 已有（66.64） |
+| noimg | `noimg` | 代码已支持，直接跑 |
+| **degrade（VA-OPD 口径）** | `ra_ctrl_mode=degrade` **已存在**（用离线 `images_degraded` 列，非 trainer 内构造） | ✅ 无需改代码，但**须先生成论文口径 degrade parquet**：`python scripts/prepare_degraded_images.py --method spatial-scale --scale 0.1`（⚠️ 脚本默认 token-budget/bicubic 不是论文口径，必须显式 spatial-scale = 10% bilinear下→nearest上）。跑时 `ra_ctrl_mode=degrade ra_ctrl_image_key=images_degraded` |
+| gaussian-noise | 需加 `gaussnoise` mode | ⚠️ 需代码：同尺寸随机高斯噪声图（`np.random.normal`→uint8→PIL），加 `_make_noise_images_like` + 分支 |
+**跑**：noimg / degrade / gaussnoise 三个新 run（black 已有），各 2B×unfiltered 90步 + 9-bench。判读：若 black 明显最好→ctrl 设计有讲究写进 paper；若都差不多→ctrl 不敏感、black 因简单而选。**degrade 那组还顺带回答"我们黑图 vs VA-OPD downsample 哪个作 ctrl 更好"**。
+
+### P35 · VA-OPD-in-OPSD 复现（2B）✅ Codex review 完成，配置已定（07-20）
+仓库能忠实复现（faithful-with-caveats）。**前置：生成论文口径 degrade parquet**（脚本默认是 token-budget/bicubic，**必须显式 spatial-scale**）：
+```
+python scripts/prepare_degraded_images.py --input <2B训练parquet> --output <..._degraded.parquet> --method spatial-scale --scale 0.1
+```
+**VA-OPD-in-OPSD 关键 flag**（在 contrast_standard run 基础上覆盖，用 plain teacher target + grouped KL + rollout reweight）：
+```
+ra_target_mode=teacher            # 关 contrast，用 plain hi target（VA-OPD 不用 contrast）
+ra_ctrl_mode=degrade  ra_ctrl_image_key=images_degraded   # 论文 10% downsample ctrl
+ra_weighting_mode=vaopd_grouped  ra_vaopd_pv=0.2  ra_vaopd_lambda=0.5
+ra_rollout_reweight=True  ra_rollout_tau=1.0
+ra_divergence_alpha=0.0  full_logit_distillation=True  distillation_topk=null
+```
+**paper 须声明的差异**（Codex 核实）：① teacher 是 EMA 自蒸馏非外部强 teacher；② ctrl 用论文 degrade（不是 black/noimg）；③ rollout reweight 依赖同 uid rollout 在同 microbatch，batch 构造影响分组。1 个 2B run + 9-bench。与 ours(66.64) 对比 = "VA-OPD 加权机制 vs 我们的 contrast target 谁强"。
+
+### P36 · dynamic alpha schedule（衰减 α，2B）
+**假设**：α 随训练慢慢变小（像 lr schedule）会不会更好 / 崩溃更晚？（自放大反馈环由激进 tilting 驱动，后期收敛 α 降低激进度）。**⚠️ 需代码**：`contrast_alpha` 现为固定标量（dp_actor.py:1367 传入）。改成随 global_step 衰减——加 config `ra_contrast_alpha_schedule`（none/linear/cosine）+ `ra_contrast_alpha_end`，在 dp_actor 里按当前 step 算 α(step)=α0→α_end。**跑**：α: 1.0→0.0 linear（或 1.0→0.5），2B×unfiltered，**训到 200-437 步**（重点看崩溃是否比固定 α 的 150-200 推后）+ save_freq=10。判读：若崩溃推后且分数不降→dynamic α 是稳定性改进，可能升级默认配置。
+
+**排班 v2（07-20 去冲突后，4 机；α=0 baseline 已 armed 在 301832790 不动，最高优先）**：
+| 机器 | 当前 | 训练队列（按序） | 备注 |
+|---|---|---|---|
+| **301832790** | α=0 baseline armed（等 GPU） | ① α=0 matched baseline（最高优，已 armed）→ ② **P36** dynamic α（本机 α validator 已放宽，加 schedule 顺手） | α=0 完了接 P36 |
+| **301761390** | 清空/待命 | ① **P33** no-anchor（高优）→ ② **P35** VA-OPD（配置已就绪，复用下方 degrade parquet） | P35 用 301829143 生成的 degrade parquet |
+| **301829143** | QL1（Qwen3.5 len4096）在跑/收尾 | ① QL1 收尾 → ② **P34** ctrl 消融：**先 `prepare_degraded_images.py --method spatial-scale --scale 0.1` 生成 degrade parquet（P34+P35 共用，生成一次）** + 加 gaussnoise ctrl mode → 跑 noimg/degrade/gaussnoise 三 run | degrade parquet 是 P34/P35 共享 artifact |
+| **301832756** | eval backlog（N3b/N3c/FC 曲线）在跑 | eval 跑完后加入训练池（接队列里最靠前的未认领项） | 当前专职 eval |
+
+⚠️ **degrade parquet 共享**：P34 的 degrade 组和 P35（VA-OPD）用同一份论文口径 degrade 图（10% spatial-scale），301829143 生成一次，P35 直接复用同 NAS 路径，别重复生成。
+⚠️ **eval backlog 独立轨**：20 项 eval（现剩 N3b/N3c/FC）由 301832756 跑，不占训练排班；Qwen3.5-2B 主表两行等它出数。
+
+## 🔥 P33 — no-anchor / pure-CD target 消融（2026-07-20 用户拍板"必须跑"，高优先）
+
+**动机**：现在 ours target = `log_softmax(lp_hi + α·(lp_hi−lp_ctrl))` ∝ p_hi²/p_ctrl（带 p_hi 锚）。
+测**去掉锚**的纯对比 target = `log_softmax(lp_hi − lp_ctrl)` ∝ p_hi/p_ctrl——**恰好是 Contrastive
+Decoding 原始打分**（Li et al.）。回答审稿人必问的"vs 纯 CD、锚有没有用"。不在 α 家族里（独立轴），
+α 扫描覆盖不到，必须实测。
+
+**✅ 代码已就绪（07-20 devbox 改 + Codex 复核通过）**：加了 `ra_contrast_anchor_coef` 开关，五处接线全通
+（`ra_vad.py` build_contrast_target 参数+公式 `float(anchor_coef)*lp_hi + float(alpha)*(lp_hi-lp_ctrl)`、
+ra_kd_loss 透传；`dp_actor.py:1369` 从 config 读；`config/actor.py`+`actor.yaml` schema 注册）。
+`anchor_coef=1.0`(默认)=现状不变（Codex 确认 float(1.0)*lp_hi 数值完全一致）；**`anchor_coef=0.0`+`alpha=1.0`=纯对比 lp_hi−lp_ctrl**。
+β 支撑集保留、EOS 豁免仍用 lp_hi（Codex 确认 anchor=0 下都正常）。**wrapper 就绪**：`scripts/run_p33_pure_contrast_noanchor_2b.sh`（一条命令，8卡，anchor_coef=0.0）。
+⚠️ **别和 α=0 matched baseline 混**：那个是 α=0（纯 anchored teacher 蒸馏，无对比）；P33 是 anchor_coef=0/α=1（纯对比，无锚）——两个不同实验。
+
+| # | 任务 | 配置 | 状态 |
+|---|---|---|---|
+| P33 | **纯对比 target（no-anchor）2B × unfiltered，90步** | 终局配置 + `ra_contrast_anchor_coef=0.0`（α 仍 1.0、β 仍 0.1）；**save_freq=10 多存 checkpoint**（观察崩溃是否比现在的 150 步更早——纯比值更激进，可能提前失控，本身是有价值观察）；len6144/bs32 | 🏃 **301832790 已认领并挂链（07-20 21:4x）**：driver `scripts/run_p33_noanchor_after_alpha0_20260720.sh`，**串在 α=0 matched baseline 之后**（等 α0 ckpt 到 step90 → 8卡空 → fresh 启动）。ckpt名 `Vision-OPD-contrast-noanchor-uniform-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301832790`，anchor_coef=0 validator 已 smoke-test。训完 merge 30/60/90，eval 待排 |
+
+**判读**：与主配置 ours(2B 66.64) 对比——(a) 打平或更好 → 锚可去，方法更接近纯 CD 更简洁；
+(b) 更差/更早崩 → 锚是必要设计，写进 ablation 一行"expert anchor prevents ratio-driven degeneration"。
+两种结果都进 paper。若健康，可续训到 150/200 看崩溃边界是否前移。eval 完把 anchor_coef 消融补进 α 那组消融表。
+
+📢 **分配 + 提优先级（07-20 用户拍板"提高优先级"）：P33 = 最高优先训练任务，代码已就绪只差启动。
+分配给最先空出 8 卡的机器（301761390 优先——它队列里 P33 本就排第一；若它还在忙别的，任意空闲机器抄
+`scripts/run_p33_pure_contrast_noanchor_2b.sh` 直接跑，~3h + 9-bench eval）。** 排在其余新消融（P34/P35/P36）之前。
+
 ## 🆕 S2c — 2B OPSD×unfiltered 第三 seed（2026-07-20 用户拍板：V-e3 疑似坏训练）
 
 背景：V-e3（default seed）2B OPSD×unfiltered = 62.28（低于 base，S2a 曾归因 hint 依赖 M2）；**S2b（seed1234）= 68.44 反而高于 base，未复现崩溃**。用户判定 **V-e3 那次 training 有问题**，主表改用 S2b(68.44)，M2 本征缺陷叙事撤销。为坐实，补第三 seed。
 
 | # | 任务 | 说明 | 状态 |
 |---|---|---|---|
-| S2c | 2B answer-hint × unfiltered，90步，`data.seed=777` | 与 V-e3(默认,62.28★疑坏)/S2b(1234,68.44) 凑 3 seed；若 S2c 也 ≥base 则确认 V-e3 是孤立坏训练 | ⏳ 待认领（📢 任意空闲 8 卡机；4B/Qwen3.5 无需，仅 2B 补） |
+| S2c | 2B answer-hint × unfiltered，90步，`data.seed=777` | 与 V-e3(默认,62.28★疑坏)/S2b(1234,68.44) 凑 3 seed；若 S2c 也 ≥base 则确认 V-e3 是孤立坏训练 | 🏃 **301832756 已启动（07-20 21:48，8卡，N4 后接）**：driver `scripts/run_s2c_301832756.sh`，ckpt名 `Vision-OPD-baseline-seed777-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301832756`，自动 merge 30/60/90 |
 
 ★ V-e3 checkpoint 保留但主表弃用；如需复盘可查其 loss 曲线是否异常。
 
@@ -1305,6 +1400,18 @@ AI2D 重算）。**口径 caveat：VA-OPD 是 avg@8 + 2B student + 外部 teache
 **✅ [mlx session 已提交 2026-07-16 ~17:0x]** D1=`762c3bb07c7cb5a2`、D2=`4fb0d1e50d8f722a`、
 D3=`aa34e28ab94d1a96`（排队中）。
 
+**✅ [301832790 07-20 18:0x 本地重跑收尾] mlx 三个 D job 都只跑出 WeMath 就被 STOPPED（印证 ~3.87h
+批量扫停），本机 8卡本地补齐缺项。已出数（temp0/4096，GPT-5.4-mini judge）**：
+
+| 模型 | WeMath(Strict) | MathVerse_MINI | MMMU_DEV_VAL | OCRBench(Norm) | MathVista_MINI | MMStar | HallusionBench(aAcc) |
+|---|---|---|---|---|---|---|---|
+| geo3k contrast-标准 4B | 54.38 | 🏃补跑中 | 65.33 | 82.2 | 76.4 | 70.20 | 73.40 |
+| geo3k contrast-保守 4B | 54.19 | 🏃补跑中 | 63.11 | 82.9 | 75.5 | 70.87 | 72.77 |
+| base-4B（对照） | 52.76 | 🏃补跑中 | 62.00 | 87.2 | （已有） | （已有） | （已有） |
+
+（MathVerse_MINI 三行 07-20 18:5x 在 GPU1/2/3 补跑，~15min 出数后回填此表；MathVista overall 取
+answer-heavy 复算列。口径 caveat 见上：与 VA-OPD 只能引用式对比不同表混排。）
+
 **⚠️ [mlx session 2026-07-16 ~17:0x] 昨晚judge打爆疑云排查结果：judge 侧基本干净，真正的污染在
 HRBench8K 的推理失败**。扫描 2026-07-15 20:00 后所有 eval 日志：ZoomBench judge（A1/A2 各 845 题）
 0 异常、B 组 judge 0 fail、MathVista GPT judge 命中率正常。但 **5 份 Qwen3.5 评测的 HRBench8K 各有
@@ -1454,8 +1561,11 @@ Qwen3.5 行：base ✅(A1)、OPSD 缺 eval(E7)、ours 等 T3a。
 - ⚠️ MathVista 同 config 两次 67.00 vs 69.20（疑 seed），主表引用哪个未定稿
 - ⚠️ ZoomBench v3-fixed（†）与 canonical 口径不可混比（4B 表 baseline/VisionOPD 行）；
   可选零成本补救：对 v3-fixed 行的已有预测做 canonical 重判分
-- ⚠️ Qwen3.5 系列 HR8K 大图超时污染（baseline×repo 66fail / baseline×virl39k 65fail /
-  visionopd_rerun 42fail，偏低 6-8pp），引用前按 `REQUEST_TIMEOUT=900 RETRY=4` 重跑（见 mlx 回填说明）
+- ✅ **[301832790 07-20 18:3x 本地重跑已解决] Qwen3.5 系列 HR8K 大图超时污染**——三份都用
+  `REQUEST_TIMEOUT=900 RETRY=12` 本地 8卡 fresh 重跑，infer_fail 0，干净值：
+  **answer-hint×repo(step62) HR8K = 77.88**（原 ⊘71.62，66fail）/ **answer-hint×virl39k(step145) = 80.13**
+  （原 ⊘72.50，65fail）/ **visionopd(step62) = 78.38**（原 ⊘72.0/73.63，42fail）——均较污染值 +5~8pp，
+  符合"去掉大图超时"预期。引用请用这三个新值，⊘ 旧值作废。
 
 ### 写作侧关联提醒
 
