@@ -1,6 +1,39 @@
 # 排队实验 — 2026-07-13
 
-## 🧪 Beyond-paper 新方向立项（2026-07-19 22:3x，用户直接下达；详见 `docs/plan_beyond_paper_20260719.md`）
+## ⚠️ [mlx session 07-20 04:2x] 20 个 eval 任务 mlx 提交系统性失败，转本地 GPU 执行，待认领
+
+**现象**：N1/FA1-4/S1-seed1234/S2b/N3a/N3b/N3c/FC1(5点)/FC4(5点) 共 20 个 job 全部 `mlx job submitv2` 后
+status=5 FAILED（跑 17-40 分钟后死，`outputs_api_server/<MODEL_NAME>_eval/` 目录**全部没建出来**——
+说明卡在 vLLM serve 启动前，大概率是 `pip install requirements_arnold.txt` 阶段）。挑 5 个错开时间重投
+仍 100% FAILED，判定为系统性问题非偶发。`mlx job get/log` 拿不到 err_msg（websocket 老问题）。
+**可疑诱因**：同一账号 04:09-04:10 一分钟内有另一批 13 个不相关任务（`evalunit-8Bthink_disagree2-150-amc23`
+系列）密集提交到同一队列，怀疑当前 group668 队列被多会话重度并发占用；已提交一个纯 pip-install+sleep 的
+diagnostic smoke test（`c3fc00dc8643972a`）交叉验证，结果未出。
+
+**用户 07-20 决定：改本地 GPU device 跑，由另一台机器认领**。以下 20 个待评全部可直接抄用现成的
+`VLMEvalKit/shell_scripts/eval_model_temp0_4096.sh`（`BACKEND=vllm_server`，见 `Vision-OPD/CLAUDE.md`），
+把 `GPU_IDS=0` 换成认领机器的空闲卡号：
+
+| # | MODEL_PATH | MODEL_NAME | 备注 |
+|---|---|---|---|
+| N1 | `cache/hub/models--Qwen--Qwen3-VL-8B-Instruct/snapshots/0c351dd01ed87e9c1b53cbc748cba10e6187ff3b` | `vanilla_qwen3vl8b` | base 模型，非 checkpoint |
+| FA1 | `Vision-OPD/checkpoints/Vision-OPD-contrast-uniform-alpha05-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301783374/global_step_90` | `fa1_uniform_alpha05_unfiltered_step90` | tokenizer 已修复(list→dict) |
+| FA2 | `.../Vision-OPD-contrast-uniform-alpha20-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301783374/global_step_90` | `fa2_uniform_alpha20_unfiltered_step90` | tokenizer 已修复 |
+| FA3 | `.../Vision-OPD-contrast-uniform-beta0-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301829143/global_step_90` | `fa3_uniform_beta0_unfiltered_step90` | |
+| FA4 | `.../Vision-OPD-contrast-uniform-noeosexempt-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301829143/global_step_90` | `fa4_uniform_noeosexempt_unfiltered_step90` | |
+| S1-seed1234 | `.../Vision-OPD-contrast-uniform-seed1234-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301761390/global_step_90` | `uniform_seed1234_2b_unfiltered_step90_local` | tokenizer 已修复 |
+| S2b | `.../Vision-OPD-baseline-seed1234-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301783374/global_step_90` | `s2b_answerhint_seed1234_unfiltered_step90` | |
+| N3a | `.../Vision-OPD-baseline-Qwen3-VL-8B-virl39k-UNFILTERED1img-90step-trial301829143/global_step_90` | `n3a_answerhint_8b_unfiltered_step90` | |
+| N3b | `.../Vision-OPD-contrast-standard-uniformweight-Qwen3.5-2B-virl39k-UNFILTERED1img-90step-trial301829143/global_step_90` | `n3b_uniformweight_qwen35_2b_unfiltered_step90` | **qwen35 shim + conda**（`PATH=$V/scripts/qwen35_shim:$PATH`，`source miniconda3/etc/profile.d/conda.sh`）；tokenizer 已修复(缺字段) |
+| N3c | `.../Vision-OPD-baseline-Qwen3.5-2B-virl39k-UNFILTERED1img-90step-trial301829143/global_step_90` | `n3c_answerhint_qwen35_2b_unfiltered_step90` | 同上 qwen35 shim + conda；tokenizer 已修复 |
+| FC1 ×5 | `.../Vision-OPD-contrast-uniform-Qwen3-VL-2B-virl39k-UNFILTERED1img-150step-keepall-trial301783374/global_step_{30,60,90,120,150}` | `fc1_uniform_unfiltered_step{30,60,90,120,150}` | 2B ours 细曲线 |
+| FC4 ×5 | `.../Vision-OPD-baseline-Qwen3-VL-2B-virl39k-UNFILTERED1img-150step-keepall-trial301783374/global_step_{30,60,90,120,150}` | `fc4_opsd_unfiltered_step{30,60,90,120,150}` | 2B OPSD 细曲线 |
+
+全部 9-bench：`DATASETS=BLINK,MMStar,MMBench_DEV_EN,VStarBench,MathVista_MINI,HRBench4K,HRBench8K,POPE,HallusionBench`。
+现成 wrapper 脚本在 `Vision-OPD/scripts/mlxq_*.sh`（文件名对应上表，直接把 `GPU_IDS=0` 改掉、去掉 mlx 相关的
+`pip3 install`/entrypoint 包装即可本地跑，或者直接 `bash scripts/mlxq_xxx.sh` 因为里面已经是标准 eval 调用）。
+**mlx session 本轮不再对这 20 个盲目重投**（已复现失败 2 次，按规则停手），等本地 GPU 出数后回填即可，
+或平台队列恢复正常后再切回 mlx。
 
 两条线：**G 系**（ours×GRPO 合体，能否>纯GRPO）+ **Q 系**（black×qtext 双 ctrl）。全部以终局配置为基口径。
 - **G1 🏃 301832790 已启动**：GRPO×virl39k(unfiltered) 1ep，init=P26 ours-uniform step90（零代码序贯合体），
@@ -329,14 +362,25 @@ seed1234 67.65/67.88）；**真正的新发现 = 2B run-to-run variance ≈ ±3p
 | **FC 批（fine-curve 重训，2026-07-18 用户下达："慢慢让3个机器跑"——低优先级，机器空了就领）** | 背景：中间 ckpt 被 prune，细粒度曲线需同配置重训。**全部 = 终局配置（uniform × unfiltered）× 150步 × save_freq=10 × ⚠️ 训完暂缓 prune（保留全部 15 个存档，明确豁免 CLAUDE.md 的 prune 政策——本批的存在意义就是中间点）** | 曲线纪律：每条细曲线整条取自该 run 自身（含它自己的 90/120/150），不与 P26/P27 原 run 端点混拼（GPU 非确定性 ±3pp）。**eval 先不排**——等 FINAL-WAVE 三点粗曲线出来、用户决定加密密度后再对 FC 产物按需提交（可能只评 60-150 段） | |
 | FC1 | 2B uniform×unfiltered，150步，len6144，save_freq=10 不 prune | 磁盘注意：15 个 2B 存档 ≈ 400GB，确认配额余量再跑；空间紧可 60 步前的先删（曲线重点在 60-150） | ✅ **完成（07-18 22:34，301832790，8卡 fresh 150/150 一次通过）**：全部 15 档 save_freq 存档保留，step30/60/90/120/150 已 merge → `Vision-OPD-contrast-uniform-Qwen3-VL-2B-virl39k-UNFILTERED1img-150step-keepall-trial301783374`。**FINAL-WAVE 2B 细曲线就绪，5 点 eval 待 mlx**（MODEL_NAME 建议 `fc1_uniform_unfiltered_step{30,60,90,120,150}`；中间未 merge 档如需加密度另说）。**✅ [mlx session 07-19 22:0x] 5 点已提交**（9-bench，未按 FCE 的 7-bench-only 省成本规范——那是给 15 点密集版的，这 5 点已 merge 直接跑全套）：step30=`afbea15d78f34587` / step60=`88f24f9bb4a4b096` / step90=`7aadf755a019831d` / step120=`ac6388c9e3700969` / step150=`84614e62ee2b08ef` |
 
+## 🆕 Q1 — Qwen3.5-2B 主表两行 eval（2026-07-20 用户问，ckpt 已训完只差 eval）
+
+盘点：Qwen3.5-2B 的 base（vanilla）✅ 已评；**ours（N3b, uniform×unfiltered）和 OPSD（N3c, answer-hint×unfiltered）ckpt 都训完+merge 了，但 eval 从没跑**——主表 Qwen3.5-2B 组现在只有 base 一行。
+
+| # | checkpoint | MODEL_NAME 建议 | 用途 |
+|---|---|---|---|
+| Q1a | `checkpoints/Vision-OPD-contrast-standard-uniformweight-Qwen3.5-2B-virl39k-UNFILTERED1img-90step-trial301829143/global_step_90` | `ours_qwen35_2b_unfiltered_step90` | 主表 Qwen3.5-2B ours 行（终局配置） |
+| Q1b | `checkpoints/Vision-OPD-baseline-Qwen3.5-2B-virl39k-UNFILTERED1img-90step-trial301829143/global_step_90` | `opsd_qwen35_2b_unfiltered_step90` | 主表 Qwen3.5-2B OPSD 行 |
+
+⚠️ Qwen3.5 系走 conda qwen35 env + qwen35 shim + 独占端口；POPE 若脚本判分 bug 输出 0 则手算 exact-match（同 N2 base）。9-bench 各一份，📢 **mlx 池优先级提到 N1 之后**（补齐 5-scale 主表最后一组）。
+
 ### 🆕 QL/QS 批 + 排班表 v3（2026-07-19 下午，用户四问驱动）
 
 背景：① Qwen3.5 uniform"输 base"的观感来自 V*/HRBench（thinking 混杂，no-think 对照已翻案；聚合 X12 79.89 > base 79.06）；X12 本就是 filtered；**Qwen3.5 的 len 仲裁（类比 4B P19）从未做过**。② 消融 A 表是旧口径，FA1/FA2 eval 后替换，gate 概念从 paper 删除。③ 细曲线训练全齐、eval 未跑。
 
 | # | 任务 | 配置 | 状态 |
 |---|---|---|---|
-| QL1 | **Qwen3.5-4B len 仲裁**：uniform × unfiltered @ **len4096**，90步 | P28 配方只改 len（与 P28@6144 的 W1 构成单因子 len 对）；conda qwen35 | 🏃 **301829143 认领并启动（07-19 22:20）**：driver `logs/ql1_driver_trial301829143.log`，8卡 conda qwen35，ckpt名 `Vision-OPD-contrast-standard-uniformweight-Qwen3.5-4B-virl39k-UNFILTERED1img-90step-len4096-trial301829143`，自动 merge 30/60/90，预计 ~3h（参考 P12 同规格 90s/步）。出数后与 W1（同配方@6144，79.18）做 4B 4096-vs-6144 的 Qwen3.5 len 仲裁 |
-| QS1 | **Qwen3.5-4B seed 复跑**：uniform × unfiltered @6144 × `data.seed=1234`，90步 | Qwen3.5 行 mean±std（**稳健性报告，不得挑 seed 换数**）；conda | 🏃 **301832756 已启动（07-19 22:22，8卡 conda qwen35，即原 301761390 机位——用户重开设备）**：driver `scripts/run_qs1_301832756.sh`，ckpt名 `Vision-OPD-contrast-uniform-seed1234-Qwen3.5-4B-virl39k-UNFILTERED1img-90step-trial301832756`，自动 merge 30/60/90，预计 ~3h（同规格 P28/QL1 参考 90s/步）。出数后与 W1（同配方默认seed，79.18）配对出 Qwen3.5 mean±std |
+| QL1 | **Qwen3.5-4B len 仲裁**：uniform × unfiltered @ **len4096**，90步 | P28 配方只改 len（与 P28@6144 的 W1 构成单因子 len 对）；conda qwen35 | ✅ **301829143 训完（07-20 01:14，90/90，2h55m/8卡）**，step30/60/90 已 merge+prune → `Vision-OPD-contrast-standard-uniformweight-Qwen3.5-4B-virl39k-UNFILTERED1img-90step-len4096-trial301829143`，**eval 可排（mlx，conda qwen35 shim，建议 `ql1_uniform_qwen35_4b_unfiltered_len4096_step90`）**。出数后与 W1（同配方@6144，79.18）做 4B 4096-vs-6144 的 Qwen3.5 len 仲裁 |
+| QS1 | **Qwen3.5-4B seed 复跑**：uniform × unfiltered @6144 × `data.seed=1234`，90步 | Qwen3.5 行 mean±std（**稳健性报告，不得挑 seed 换数**）；conda | 🔧 **改道 len4096（07-20 09:0x，301832756）**：@6144 两次同签名 backward OOM（59.68GiB，step31 原始/step50 降 rollout池0.55 后）——与 seed=1234 换的数据顺序踩到长序列批次有关（W1 默认seed@6144 跑满150步无恙），非环境问题。已改用项目记录的 Qwen3.5 安全长度 **len4096** 重跑（driver `scripts/run_qs1_len4096_301832756.sh`），ckpt名加 `-len4096` 后缀。⚠️ **与 W1(@6144) 不再是单因子对照**——mean±std 报告需标注 len 差异，或等 QL1（同配方@4096 默认seed）出数后按"同 len 配对"二次核对 |
 | FCE-merge | FC1 中间 10 档补 merge（10-140） | 本机产物 | 📢 **分配 301832790**（若已做完忽略） |
 | FCE-eval | 细曲线 eval：FC1(ours)+FC4(OPSD) 各 15 点 × 7-bench 快组 + 逐 step hint 幻觉率提取 | ~30 个快 eval | 📢 **mlx 池提到第 3 位**（N1、FA 评之后） |
 
