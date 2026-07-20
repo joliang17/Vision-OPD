@@ -12,10 +12,15 @@ torch2.10.0/transformers5.5.0 到 user-local（后来发现多余，conda 已够
 `run_experiment_baseline.sh`/`run_experiment_contrast_standard.sh` 不显式传 conda）。**Qwen3.5 系列用
 conda qwen35 不受影响**（conda 环境隔离，QS1/N4 都已验证过）。
 
-**修复**：验证 `PYTHONNOUSERSITE=1 python3 -c "import torch,transformers,flash_attn"` 干净通过
-（torch2.8.0+transformers4.57.0+flash_attn2.8.1 互相 ABI 匹配）——**本机今后所有 plain Qwen3-VL 训练
-命令都要显式加 `PYTHONNOUSERSITE=1`**（S2c 已用此修复重启）。未清理 user-local 污染源（`~/.local/lib/python3.11/site-packages/torch,transformers`）
-是因为清理本身有风险（可能牵连别的东西），显式加环境变量是更安全的绕过方式。
+**修复第一层**：`PYTHONNOUSERSITE=1` 解决了 flash_attn ABI 崩溃，但暴露第二个坑——纯系统栈缺
+`tensorboard`（`/usr/local` 无写权限装不进去，`--user` 又会绕回被污染的 user-local）。**修复第二层**：
+装进独立目录 `.syspkg_shim` + 显式 `PYTHONPATH`（不受 `PYTHONNOUSERSITE` 影响，这套路子和 07-18
+X5 重跑那次缺 termcolor/validators/openpyxl 时用的一样）。**最终验证**：
+`PYTHONNOUSERSITE=1 PYTHONPATH=.../.syspkg_shim python3 -c "import tensorboard,torch,transformers,flash_attn"`
+全部干净通过（tensorboard2.20.0+torch2.8.0+transformers4.57.0+flash_attn2.8.1）。**本机今后所有
+plain Qwen3-VL 训练命令都要带这两个 env var**（S2c 用此修复第三次重启，driver
+`scripts/run_s2c_retry2_301832756.sh`）。未清理 user-local 污染源本身，是因为清理有风险，显式加
+env var 更安全。
 
 # 排队实验 — 2026-07-13
 
