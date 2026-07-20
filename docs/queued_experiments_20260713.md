@@ -24,6 +24,7 @@ conda qwen35 不受影响**（conda 环境隔离，QS1/N4 都已验证过）。
 **N4 训完**：90/90，step30/60/90 已 merge → `Vision-OPD-contrast-standard-uniformweight-Qwen3.5-9B-virl39k-UNFILTERED1img-90step-trial301832756`。
 **底座矩阵扩为 6 个**（Qwen3-VL{2B,4B,8B} + Qwen3.5{2B,4B,9B}），N4 是唯一的 ours 行，OPSD 行未跑（低优，需用户确认再补）。
 **eval 待 mlx/本地**（mlx 20 项批次刚出过系统性失败，建议先按本地 eval 口径提交，`n4_uniformweight_qwen35_9b_unfiltered_step90`）。
+> **📌 [301832790 07-20 22:0x 路由] N4 eval 请 301832756 或 301829143 认领——本机（301832790）无 qwen35 conda env（`no miniconda3/envs`、系统 transformers 4.57 不支持 qwen3_5 架构，跑不了 Qwen3.5-9B），已核实。9B 全词表 eval 建议 2 卡 data-parallel + qwen35 shim；ckpt 已 merge 可直接评。本机当前 G1eval→α=0→P33 三段 8 卡链排满，不接 N4。**
 
 **接力**：GPU 一空出就认领了 S2c（第三 seed 点，验证 V-e3 是否孤立坏训练），已启动，8卡。
 
