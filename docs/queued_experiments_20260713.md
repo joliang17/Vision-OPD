@@ -1,5 +1,16 @@
 # 排队实验 — 2026-07-13
 
+## ✅ [301832756 07-20 12:0x] QS1 完成（len4096），本机再次清空
+
+`Vision-OPD-contrast-uniform-seed1234-Qwen3.5-4B-virl39k-UNFILTERED1img-90step-len4096-trial301832756`
+90/90，step30/60/90 已 merge。**待 mlx eval**（建议 `qs1_seed1234_qwen35_len4096_step90`，9-bench）。
+
+⚠️ **配对提醒**：本行是 len4096，W1（Qwen3.5 mean±std 的默认seed点）是 len6144——不是单因子 seed 对照。
+等 QL1（同配方@4096、默认seed，301829143 在跑）出数后才有干净的"同 len 换 seed" mean±std 三角：
+W1(6144,默认) / QL1(4096,默认) / QS1(4096,seed1234)。
+
+本机 8 卡已空，待命。
+
 ## ⚠️ [mlx session 07-20 04:2x] 20 个 eval 任务 mlx 提交系统性失败，转本地 GPU 执行，待认领
 
 **现象**：N1/FA1-4/S1-seed1234/S2b/N3a/N3b/N3c/FC1(5点)/FC4(5点) 共 20 个 job 全部 `mlx job submitv2` 后
