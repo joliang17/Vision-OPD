@@ -1,5 +1,14 @@
 # 排队实验 — 2026-07-13
 
+## 🚀 [301832756 07-21 02:2x] N4/S2c/QL1 eval 无人认领，本机本地跑（避开 mlx 系统性失败）
+
+三个刚训完的 checkpoint（N4=Qwen3.5-9B主配置、S2c=2B answer-hint seed777、QL1=Qwen3.5-4B len4096
+仲裁点）盘点后发现都还没排 eval——mlx 之前那批 20 项系统性失败，直接走本地。已启动 3 路并行
+（conda qwen35，GPU0-2，driver `scripts/run_eval_n4_s2c_ql1_301832756.sh`），9-bench 全套，
+输出口径 `_server_qwen3vl2b_temp0_4096_generic`（与其他本地跑一致，防撞名）。
+
+# 排队实验 — 2026-07-13
+
 ## ⚠️ [301832756 07-20 22:1x] 机器专属坑：本机 user-local python 栈被污染，plain Qwen3-VL 训练需 PYTHONNOUSERSITE=1
 
 **根因**：设备重开后排查 QS1（Qwen3.5）环境时，在发现 conda qwen35 之前先 `pip install --user` 装了
@@ -1461,14 +1470,19 @@ D3=`aa34e28ab94d1a96`（排队中）。
 
 | 模型 | WeMath(Strict) | MathVerse_MINI | MMMU_DEV_VAL | OCRBench(Norm) | MathVista_MINI | MMStar | HallusionBench(aAcc) |
 |---|---|---|---|---|---|---|---|
-| geo3k contrast-标准 4B | 54.38 | 44.54 | 65.33 | 82.2 | 76.4 | 70.20 | 73.40 |
-| geo3k contrast-保守 4B | 54.19 | 53.17 | 63.11 | 82.9 | 75.5 | 70.87 | 72.77 |
-| base-4B（对照） | 52.76 | ⚠️15.23 | 62.00 | 87.2 | （已有） | （已有） | （已有） |
+| 模型 | WeMath(Strict) | MathVerse_MINI(5split均) | MMMU_DEV_VAL | OCRBench(Norm) | MathVista_MINI | MMStar | HallusionBench(aAcc) |
+|---|---|---|---|---|---|---|---|
+| geo3k contrast-标准 4B | 54.38 | 42.36 | 65.33 | 82.2 | 76.4 | 70.20 | 73.40 |
+| geo3k contrast-保守 4B | 54.19 | 42.69 | 63.11 | 82.9 | 75.5 | 70.87 | 72.77 |
+| base-4B（对照） | 52.76 | ⚠️16.17 | 62.00 | 87.2 | （已有） | （已有） | （已有） |
 
-（✅ MathVerse_MINI 三行 07-21 已回填。⚠️ base-4B MathVerse **15.23 反常偏低**——与 std 44.54/cons 53.17 差 ~30pp，
-不像纯训练收益，疑 base 模型在该 split 的判分/抽取问题，引用 D 组 base 对照行的 MathVerse 前需单独核验预测。
-MathVista overall 取
-answer-heavy 复算列。口径 caveat 见上：与 VA-OPD 只能引用式对比不同表混排。）
+（✅ MathVerse_MINI 三行 07-21 已回填并**统一为 5-split 均值口径**——之前 44.54/53.17/15.23 是抽错 split 的假象
+（std=Text Lite、cons=Text Dominant、base=Text Lite，各 score.csv 的 split 行序不同）。
+**⚠️ base-4B MathVerse 16.17 的归因（07-21 重判分定论）**：不是 judge bug——删缓存重跑 GPT 判分后 14.87→16.17
+几乎没变。真因是 **base 在 MathVerse 上退化成"猜裸字母"**（54% 预测是单字母 `D`/`C`/`A`，std/cons 是 0%、全是
+完整解题）；MCQ 子集 base 首字母裸命中 50.9% 但 MathVerse 判分要答案内容/推理，裸字母被正确判低 → 16。
+**26pp gap 真实（geo3k 会解 vs base 瞎猜），但 base 的 16 是格式/指令跟随退化、非纯数学能力，作 base 对照引用需注明**。
+MathVista overall 取 answer-heavy 复算列。口径 caveat 见上：与 VA-OPD 只能引用式对比不同表混排。）
 
 **⚠️ [mlx session 2026-07-16 ~17:0x] 昨晚judge打爆疑云排查结果：judge 侧基本干净，真正的污染在
 HRBench8K 的推理失败**。扫描 2026-07-15 20:00 后所有 eval 日志：ZoomBench judge（A1/A2 各 845 题）
