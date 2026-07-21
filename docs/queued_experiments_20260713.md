@@ -1,5 +1,44 @@
 # 排队实验 — 2026-07-13
 
+## ✅ [301832756 07-21 19:5x] 全量重跑收尾：5单点 + FCE30点曲线全部出真实数据
+
+接上面 03:4x 那条根因修复，全量重跑（merge 20点 + 5单点eval + FCE缺口20点）已经全部完成并系统性核对
+（不是看driver "finished"日志，是实际数 `normal_scoring/*.csv` 文件数）：
+
+**5个单点，9-bench全齐（含之前分开修的 MathVista_MINI）：**
+
+| 数据集 | α=0 matched | N4(Qwen3.5-9B) | S2c(seed777) | QL1(Qwen3.5-4B len4096) | QS1(seed1234 len4096) |
+|---|---:|---:|---:|---:|---:|
+| BLINK | 44.3 | 52.5 | 56.0 | 33.7 | 36.6 |
+| MMStar | 47.4 | 74.3 | 58.7 | 63.5 | 66.9 |
+| MMBench_DEV_EN | 43.1 | 70.1 | 66.5 | 48.2 | 58.8 |
+| VStarBench | 72.8 | 76.4 | 77.0 | 68.1 | 64.9 |
+| HRBench4K | 64.0 | 73.0 | 73.5 | 62.0 | 60.0 |
+| HRBench8K | 60.5 | 63.5 | 73.5 | 53.5 | 56.5 |
+| POPE (acc) | 89.4 | 89.9 | 88.8 | 88.8 | 89.0 |
+| HallusionBench (aAcc) | 47.4 | 60.9 | 44.8 | 58.0 | 58.7 |
+| MathVista_MINI | 63.9 | 85.0 | 62.7 | 82.5 | 48.8 |
+
+**α=0 matched baseline vs 其它组普遍偏低**（尤其 MMStar/MMBench 差 20+pp）——对比 tilt 项（α）确实在
+起作用，不是噪音，符合"ours α=1 更强"的预期方向。这是本轮最高优先级的那条 paper 消融，结论可用。
+
+**FCE 30点曲线（FC1=uniform/unfiltered, FC4=OPSD/answer-hint × 7-bench, 30/60/90/120/150五点是之前留下的
++这次新补的10个缺口点×2系列）现在完整了**——15个 step（10/20/…/150）× 2 系列全部有真实 7-bench 数据。
+
+**中途一个插曲**：FCE补merge的20点跑完inference后，MathVista_MINI 的judge全部失败，一开始怀疑是
+`config/key.conf` 里 OPENAI_API_KEY 过期——排查后发现根本不是key问题，是 `.syspkg_shim` 缺
+`socksio`（`httpx[socks]`依赖），导致真实调用的 Azure judge (`tiktok_azure` provider) 因为
+`ALL_PROXY=socks5h://...`报`ImportError: Using SOCKS proxy, but the 'socksio' package is not installed`，
+但 MathVista 的 assert 报错信息是通用文案(硬编码展示 `OpenAIWrapper('gpt-4o')`调试代码)，看起来很像
+"key失效"但其实完全无关——**排查这类问题时必须用代码实际会构造的 judge 类
+(`build_judge(provider='tiktok_azure',...).working()`)复现，不能直接抄assert消息里的调试代码**。
+装了 `socksio` 后单点补judge一次性全部通过，随后20个FCE点批量补判也全部成功。已写进 opsd/CLAUDE.md。
+
+**下一步（未执行，需要你确认）**：FCE 30点曲线数据齐全后，按你之前提过的"跑完能删800G"，FC1/FC4 两个
+150-step keepall 系列除了已发布用于分析的几个 step，其余中间 checkpoint（尤其未merge的原始FSDP分片，
+每个约27GB）理论上可以清了。这是破坏性操作，我没有擅自执行——需要你确认要保留哪些 step（至少
+30/60/90/120/150 + 这次新补的10个缺口点，共15个 merged 目录建议保留，原始 actor/ FSDP 分片可以先删）。
+
 ## 🔧 [301832756 07-21 03:4x] 昨晚全天 eval 静默零分的真正根因找到，全量重跑已放开
 
 **下面这条「优先级链首次 merge 崩溃已修复重启」记录的修复是不完整的** —— `PYTHONNOUSERSITE=1 bash
@@ -626,6 +665,12 @@ ra_divergence_alpha=0.0  full_logit_distillation=True  distillation_topk=null
 
 **⚠️ [301829143 07-21 00:0x] P34a(noimg) 两次attempt均在 step~16/90 确定性OOM（同一分配大小48.69GiB）**——非随机波动（`data.seed=null` 走固定默认种子，两次数据顺序完全相同，撞到同一 batch）。black(P26) 同配方@len6144 训练健康，说明 noimg 模式（ctrl 分支无图像token，与 hi 分支长度差异大）在这个 len 下存在真实的显存不稳定性，是 P34 本身的一个有价值发现（ctrl 设计选择对显存也有影响，不只对分数）。**已挂独立补跑链**（`logs/p34a_noimg_retry_driver_trial301829143.log`，等 P34b/c 跑完后接），沿用 T3b 验证过的降法：rollout_gpu_memory_utilization 阶梯 0.7(已失败)→0.55→0.45，**不改 MAX_PROMPT_LENGTH**（保持与 black@6144 的单因子可比性）。若阶梯降到 0.45 仍 OOM，需要人工决定是否改为降 len（那样会破坏与 black 的严格单因子对比，需要标注）。**又顺便发现并修复了 `prepare_degraded_images.py` 的第二个 bug**：部分图片条目（79条）连 `path` 字段都没有（只有 `bytes`），已在 `image_entry_path()` 加 bytes-hash 兜底，degrade parquet 已重新生成完整（36039行）。
 
+**✅ [301829143 07-21] P34 收尾状态**：
+- **P34b(degrade)✅** 09:19 训完（90/90，慢，385s/步——图片每步磁盘读取解码开销，非报错），step30/60/90 已 merge → `Vision-OPD-contrast-uniform-degrade-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301829143`
+- **P34c(gaussnoise)✅** 11:43 训完（90/90），step30/60/90 已 merge → `Vision-OPD-contrast-uniform-gaussnoise-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301829143`
+- **P34a(noimg) rollout_gpu_util=0.55 阶梯尝试失败，且是结构性失败不是运气差**：不是 OOM，而是把 rollout 显存压太低后 vLLM 自己的 KV cache 分配不出来（`ValueError: No available memory for the cache blocks`）——**actor backward 要"少占"和 rollout 自己要"够用"是直接冲突的两个约束，降 gpu_util 这个方向本身就走不通**，未再尝试 0.45（同样会更糟）。**改回用户建议的方案：MAX_PROMPT_LENGTH=4096**（放弃保持与 black@6144 单因子严格可比的执念，用长度换稳定性）。**已挂链**（`logs/p34a_noimg_len4096_driver_trial301829143.log`，等 S3/QA1/QA2 跑完后接，8卡），ckpt名 `Vision-OPD-contrast-uniform-noimg-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-len4096-trial301829143`。**⚠️ 结果解读须知**：本行 len=4096，其余三个 ctrl 消融（black/degrade/gaussnoise）都是 len=6144，引用/对比时必须标注这个口径差异。
+- **S3(第三seed=42)✅** 07-21 13:31 训完，merge 完。**QA1(Qwen3.5-4B α=0.5)✅** 16:51 训完merge完。**QA2(Qwen3.5-4B α=2.0)🔄** 16:53 开始训练中。
+
 **⚠️ [301829143 07-21 00:0x] 用户指出重要安全事故**：wave2 批量eval driver 的 per-job 清理逻辑用了不按进程名过滤的 `nvidia-smi -i <gpu> --query-compute-apps=pid | kill -9` 裸PID清理，**极可能误杀了 keep_gpu**（用户手动重启修复）。已记入项目记忆 `feedback_never_delete_keepgpu.md`（追加了这次事故作为第二个案例）。当前跑着的 P34/S3QA/noimg-retry 链用的是 `wait_gpus_clear()`（只等待不主动kill），没有这个风险。
 4. **P34 三个 run 已挂链**（driver `logs/p34_driver_trial301829143.log`，等 S3/QA 完 + degrade parquet 就绪后自动串行）：P34a=noimg（`EXPERIMENT=noimg`现成分支）、P34b=degrade（`EXPERIMENT=degrade`+新生成parquet）、P34c=gaussnoise（`EXPERIMENT=black`默认+trailing override `ra_ctrl_mode=gaussnoise`）。三者均为 P26 配方（uniform×unfiltered×2B×len6144×90步）只改 ctrl_mode，对照现有 black(P26,66.64)。ckpt名 `Vision-OPD-contrast-uniform-{noimg,degrade,gaussnoise}-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301829143`，各自动 merge 30/60/90，独立失败不阻塞后段。
 | **301832756** | eval backlog（N3b/N3c/FC 曲线）在跑 | eval 跑完后加入训练池（接队列里最靠前的未认领项） | 当前专职 eval |
@@ -645,6 +690,36 @@ ra_divergence_alpha=0.0  full_logit_distillation=True  distillation_topk=null
 | 4 | 其余零散待评（若空）：X 系列旧待评、V-e 系列 | 见下方各行 | 视 ckpt 定 |
 
 （α=0 出数后回填主表 2B 消融区 + ledger；FCE 出数后可删 800G 中间 ckpt，见 FCE-prune 行）
+
+## 🚨 07-21 结果验证：整批 eval 是坏 pipeline 产物，全部作废等重跑（devbox 核实 + 撞上 03:4x 根因）
+
+**⚠️ 我(devbox)最初按"环境错/训练存疑"分类，实为误判——真根因见上方 03:4x 记录：eval pipeline
+系统性缺 `xlsxwriter`，昨天全天所有本地 eval（N4/S2c/QL1/α=0/QS1 + FCE 20点）静默零分/坏分。
+铁证：N4(9B)/QL1(4B)/P33/α=0 的 BLINK 全 ~44，不同模型撞同一个坏值。**
+**这批数字（含我一度以为"干净"的 S2c=61）全部作废，等 `run_full_redo_301832756.sh` 重跑真实数据。
+ledger/paper 一律不更新。下面原分类保留作过程记录，但重跑机器分配以 301832756 的 full_redo 为准，不另分配（避免双跑）。**
+
+### 🔴 Qwen3.5 系 eval 坏了 → 丢弃重跑（用 conda qwen35 + shim）
+铁证：QL1(Q35-4B@4096)=58.19 < N3b(Q35-2B)=71.51，4B 不可能低于 2B——**用错环境**（标准 env 而非 conda，Qwen3.5 架构加载不对）。9B(N4)=67.83<4B<2B 倒挂同病。
+| # | 重跑 | ckpt | 备注 |
+|---|---|---|---|
+| N4-rerun | Qwen3.5-9B ours | `...uniformweight-Qwen3.5-9B-...UNFILTERED...trial301832756` | **conda qwen35 + shim + 独占端口**；现结果丢弃 |
+| QL1-rerun | Q35-4B ours@4096 default | `...uniform-Qwen3.5-4B...len4096...` | 同上 |
+| QS1-rerun | Q35-4B ours@4096 seed1234 | `...uniform-seed1234-Qwen3.5-4B...len4096...` | 同上 |
+📢 分配给有 conda qwen35 验证环境的机器（301832756 现跑的 N4/S2c/QL1 若也是错环境要一并作废重跑——**先确认它用的什么 env**）。
+
+### 🟡 P33(去锚)/α=0：不重训，补 MathVista + 验证 eval（devbox 已查训练健康）
+**决定（07-21）：不换 seed 重训**——rollout 复读扫描显示两者训练期都没崩溃（复读 0-4%），换 seed 大概率复现，白费训练。
+- P33 训练期中英混杂偏高(22-27%)——纯对比轻微破坏语言稳定（支持"锚助稳定"，但非崩溃）
+- 现 eval：8/9（缺 MathVista）+ 分数低(BLINK 43-46) + eval期高复读(64-70) 但训练期无 → 疑 temp=0 greedy 复读假象
+| # | 任务 | 说明 |
+|---|---|---|
+| P33-fix | 补 MathVista + 干净重跑 9-bench | ckpt `...noanchor-uniform-...trial301832790/global_step_90`。补全后若仍连贯地低=真结果(无锚伤模型)；若变正常=之前 eval 假象 |
+| α0-fix | 补 MathVista + 干净重跑 9-bench | ckpt `...alpha0-uniform-...trial301832790/global_step_90`。⚠️ **若坐实 α=0 低于 base 12pp→翻案 paper"naive OPSD 中性"叙事为"主动伤害"**，改 paper 前必须确认 |
+📢 Qwen3-VL-2B 标准环境，分配空闲机。
+
+### 🟢 S2c(OPSD seed777)=61.0 唯一干净 → OPSD 2B seed 稳定性存疑（可能翻案）
+S2c 复读仅 6、可信。OPSD 2B 三 seed：V-e3(低)/S2b(64.89 高)/S2c(61 低)——**2/3 偏低**。之前用 S2b 判"V-e3 是坏训练、OPSD 其实 fine"**可能过于乐观**——OPSD 2B 真实偏 seed 敏感、平均偏低。**ledger 已加警告**；主表 OPSD 2B 行(现 64.89=S2b)最终应报 3-seed mean±std 或换保守值，待 S2b 也核实同口径后定。
 
 ## 📈 P37 — α 加密扫描（确定不敏感 range，2026-07-20 用户提出）
 
