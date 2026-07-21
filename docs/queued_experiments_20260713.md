@@ -1,6 +1,39 @@
 # 排队实验 — 2026-07-13
 
-## ⚠️ [301832756 07-21 02:3x] 优先级链首次 merge 崩溃已修复重启
+## 🔧 [301832756 07-21 03:4x] 昨晚全天 eval 静默零分的真正根因找到，全量重跑已放开
+
+**下面这条「优先级链首次 merge 崩溃已修复重启」记录的修复是不完整的** —— `PYTHONNOUSERSITE=1 bash
+scripts/merge_checkpoint.sh` 表面通过，实际 20 个 merge 全部照样因 `DeviceMesh._layout` 报错失败：
+`conda activate` 把 conda 的 `bin/` 塞进了 `$PATH` 最前面，`merge_checkpoint.sh` 内部裸调 `python3` 时
+`PYTHONNOUSERSITE=1` 根本管不到 `$PATH` 解析，照样撞回 conda 的 torch2.10.0。**真正修复**：merge 必须显式
+用绝对路径 `/usr/bin/python -m verl.model_merger merge --backend fsdp ...`，不能指望 `python3`/`bash
+merge_checkpoint.sh` 走对。
+
+更大的坑是**这次系统排查才发现的**：昨天全天本机所有本地 eval（N4/S2c/QL1/α=0/QS1 五个单点 + FCE 缺口20点）
+全部"跑完"了但实际零分——`VLMEvalKit/shell_scripts/eval_via_vllm_server.sh` 里推理和judge两步硬编码
+`/usr/bin/python`，完全不受 `conda activate` 影响（只有 `vllm serve` 那步吃 PATH）。系统 python 缺
+`termcolor`/`sty`/`portalocker`/`tensorboard`/**`xlsxwriter`**（不是 openpyxl！vlmeval 用
+`engine='xlsxwriter'` dump 预测文件，装了 openpyxl 没装 xlsxwriter 照样静默摔进 `.pkl`，下游打分死活
+"Missing prediction"，日志没有任何 traceback，非常难查）。而且光给 `.syspkg_shim` 塞 PYTHONPATH 还不够——
+`run.py`/`tools/run_normal_eval.py` 都是相对路径调用，Python 只会把脚本自己的目录（如 `tools/`）加进
+`sys.path[0]`，不会加 cwd，所以 `vlmeval` 包（未 pip 安装，靠 cwd 相对导入）照样 `ModuleNotFoundError`——
+必须把 `VLMEvalKit` 仓库根目录也显式塞进 PYTHONPATH。
+
+**验证过的完整修复**（2026-07-21 03:39 用 BLINK 单测跑出真实分数 44.35% Overall 验证通过）：
+```bash
+conda activate qwen35                                    # 给 vllm serve 用（吃PATH）
+export PYTHONPATH=$V/.syspkg_shim:$OPSD/VLMEvalKit        # 给硬编码 /usr/bin/python 的两步用
+/usr/bin/python -m verl.model_merger merge --backend fsdp --local_dir <dir>/actor --target_dir <dir>  # merge单独走
+```
+`opsd/CLAUDE.md`（`conda qwen35` 一节）和 memory 已同步更新完整根因链。**教训**：driver 脚本只检查
+进程退出码/日志"finished"字样是不够的——之后必须抽查 `normal_scoring/*_acc.csv` 是否真的写出了有效数字
+再报告结果。
+
+全量重跑已用 `scripts/run_full_redo_301832756.sh`（PYTHONPATH 已按上面改好）放开后台跑：merge FC1/FC4
+缺的10档 → 5个单点eval重跑(N4/S2c/QL1/α=0/QS1) → FCE缺口20点eval。之前"跑完"的 N4/S2c/QL1/α=0/QS1 以及
+FCE 20个缺口点，产出全部作废，等这次真实数据。
+
+## ⚠️ [301832756 07-21 02:3x] 优先级链首次 merge 崩溃已修复重启（⚠️ 此修复不完整，见上条 03:4x 更新）
 
 **FCE 补 merge 阶段（stage 2a）全灭**：conda torch2.10.0 merge FSDP checkpoint 时
 `AttributeError: 'DeviceMesh' object has no attribute '_layout'`——与 P31 那次跨环境 resume 崩溃同一类
