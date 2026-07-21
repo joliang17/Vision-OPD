@@ -1,5 +1,20 @@
 # 排队实验 — 2026-07-13
 
+## 🔗 [301832756 07-21 02:2x] 优先级链已挂：α=0 → FCE(补merge+30点) → QS1
+
+按用户排定优先级，chained driver `scripts/run_priority_chain_301832756.sh` 已挂起，等 N4/S2c/QL1
+批次清场后自动依次执行：
+1. **α=0 matched baseline eval**（9-bench，`alpha0_matched_baseline_step90`，MODEL_NAME 已避开与
+   alpha05 撞名）
+2. **FCE 细曲线**：先补 merge FC1/FC4 各自缺的中间10档（10/20/40/50/70/80/100/110/130/140），
+   再 30 点（FC1×15 + FC4×15）× 7-bench（不含POPE/HalluB，按 FCE 规范），8卡宽波次跑完
+3. **QS1 eval**（Qwen3.5 seed1234@len4096 对照，`qs1_seed1234_qwen35_len4096_step90`，9-bench）
+
+全程走 `conda activate qwen35`（本机系统栈三连坏的教训，plain Qwen3-VL 也走 conda，不用 qwen35_shim
+——conda 激活后 PATH 上的 vllm 本身就是对的）。FCE 出数后可删 800G 中间 ckpt（见 FCE-prune 行）。
+
+# 排队实验 — 2026-07-13
+
 ## 🚀 [301832756 07-21 02:2x] N4/S2c/QL1 eval 无人认领，本机本地跑（避开 mlx 系统性失败）
 
 三个刚训完的 checkpoint（N4=Qwen3.5-9B主配置、S2c=2B answer-hint seed777、QL1=Qwen3.5-4B len4096
@@ -571,6 +586,19 @@ ra_divergence_alpha=0.0  full_logit_distillation=True  distillation_topk=null
 
 ⚠️ **degrade parquet 共享**：P34 的 degrade 组和 P35（VA-OPD）用同一份论文口径 degrade 图（10% spatial-scale），301829143 生成一次，P35 直接复用同 NAS 路径，别重复生成。
 ⚠️ **eval backlog 独立轨**：20 项 eval（现剩 N3b/N3c/FC）由 301832756 跑，不占训练排班；Qwen3.5-2B 主表两行等它出数。
+
+## 📌 301832756 eval 排班（2026-07-21，用户在本机启动；N4/S2c/QL1 本机自跑确认无双claim）
+
+本机正跑 N4/S2c/QL1 本地 eval（避开 mlx 系统性失败）。跑完按此优先接：
+
+| 优先 | 任务 | ckpt / MODEL_NAME | 环境 |
+|---|---|---|---|
+| 🔥1 | **α=0 matched baseline eval**（最高价值核心消融，未起） | `checkpoints/Vision-OPD-contrast-alpha0-uniform-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301832790/global_step_90`，`MODEL_NAME=alpha0_matched_baseline_step90`（⚠️别和 alpha05 撞名），9-bench 新 suite | Qwen3-VL-2B，标准环境无 conda |
+| 2 | **FCE 细曲线**：先补 merge FC1/FC4 中间 10 档 → 30 点×7 benchmark | `...contrast-uniform...2B...150step-keepall-...` + `...baseline...2B...150step-keepall-...`；`fc1_step{N}` / `fc4_step{N}` | 2B 标准环境 |
+| 3 | QS1 eval（Qwen3.5 seed1234 len4096，seed 对照，std 已缓） | `...contrast-uniform-seed1234-Qwen3.5-4B...len4096...`，`qs1_seed1234_qwen35_len4096_step90` | conda qwen35 + shim |
+| 4 | 其余零散待评（若空）：X 系列旧待评、V-e 系列 | 见下方各行 | 视 ckpt 定 |
+
+（α=0 出数后回填主表 2B 消融区 + ledger；FCE 出数后可删 800G 中间 ckpt，见 FCE-prune 行）
 
 ## 📈 P37 — α 加密扫描（确定不敏感 range，2026-07-20 用户提出）
 
