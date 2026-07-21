@@ -1,5 +1,18 @@
 # 排队实验 — 2026-07-13
 
+## ⚠️ [301832756 07-21 02:3x] 优先级链首次 merge 崩溃已修复重启
+
+**FCE 补 merge 阶段（stage 2a）全灭**：conda torch2.10.0 merge FSDP checkpoint 时
+`AttributeError: 'DeviceMesh' object has no attribute '_layout'`——与 P31 那次跨环境 resume 崩溃同一类
+（存盘/合并环境的 torch DeviceMesh 内部 API 不兼容）。**验证**：换系统栈 torch2.8.0
+（`PYTHONNOUSERSITE=1`）merge 同一个 checkpoint 一次通过，问题定位为 conda torch 版本，非 checkpoint 损坏。
+**修复**：driver 里的 merge 调用改为 `PYTHONNOUSERSITE=1 bash scripts/merge_checkpoint.sh`（eval 部分仍用
+conda，只有 merge 这一步切系统栈），并加上失败显式记日志（之前是静默吞掉失败继续下一个）。链已重启
+（driver `scripts/run_priority_chain_301832756.sh`，从 stage 1 α=0 eval 重新开始，之前那次 stage1 未产出
+有效数据）。
+
+# 排队实验 — 2026-07-13
+
 ## 🔗 [301832756 07-21 02:2x] 优先级链已挂：α=0 → FCE(补merge+30点) → QS1
 
 按用户排定优先级，chained driver `scripts/run_priority_chain_301832756.sh` 已挂起，等 N4/S2c/QL1

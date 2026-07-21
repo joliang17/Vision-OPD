@@ -49,7 +49,7 @@ FC4=$CKPT/Vision-OPD-baseline-Qwen3-VL-2B-virl39k-UNFILTERED1img-150step-keepall
 for d in "$FC1" "$FC4"; do
   for st in 10 20 40 50 70 80 100 110 130 140; do
     dd="$d/global_step_${st}"
-    [ -d "$dd/actor" ] && [ ! -f "$dd/config.json" ] && bash scripts/merge_checkpoint.sh "$dd" >> "$LOG" 2>&1 && log "merged $(basename $d)/global_step_${st}"
+    [ -d "$dd/actor" ] && [ ! -f "$dd/config.json" ] && PYTHONNOUSERSITE=1 bash scripts/merge_checkpoint.sh "$dd" >> "$LOG" 2>&1 && log "merged $(basename $d)/global_step_${st}" || log "MERGE FAILED $(basename $d)/global_step_${st}"
   done
 done
 log "stage 2a merge done"
