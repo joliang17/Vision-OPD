@@ -545,17 +545,41 @@ ra_divergence_alpha=0.0  full_logit_distillation=True  distillation_topk=null
 |---|---|---|---|
 | **301832790** | α=0 baseline armed（等 GPU） | ① α=0 matched baseline（已 armed）→ ② **P36** dynamic α | ⚠️ P33 已挪走给 301761390，本机的 P33 串行 driver 作废，α=0 后直接接 P36 |
 | **301761390** | 清空/待命 | ① **P33** no-anchor 🔥🔥**最高优，立即 fresh 起**（wrapper 就绪）→ ② **P35** VA-OPD（配置就绪，复用 degrade parquet） | P33 从 301832790 队尾挪来，独占一台立即跑 |
-| **301829143** | QL1 ✅ → S3/QA(用户直接下达) 🏃 → P34 已挂链 | ① QL1 收尾 ✅ → ② **S3**(第三seed=42三角验证,与301832756的S2c=777互补，凑4-seed) + **QA1/QA2**(Qwen3.5-4B α消融验证2B结论是否transfer) 🏃 → ③ **P34** ctrl 消融 🏃已挂链 | 详见下方 07-20 21:5x 更新 |
+| **301829143** | QL1 ✅ → P34 🏃(优先级已调) → S3/QA 排队 | ① QL1 收尾 ✅ → ② **P34** ctrl 消融（noimg/degrade/gaussnoise）🏃**已提优先级，wave2清空后立即开跑** → ③ **S3**(第三seed=42三角验证,与301832756的S2c=777互补，凑4-seed) + **QA1/QA2**(Qwen3.5-4B α消融) 排在 P34 后 | **07-20 22:5x 用户调整顺序**：P34 优先于 S3/QA（原计划反过来）；两条链已停(尚在等待阶段无GPU浪费)+改依赖关系+重挂，详见下方 |
 
 **📢 [301829143 07-20 21:5x] P34 前置工作完成，driver 已挂链**：
 1. **`gaussnoise` ctrl mode 代码已实现**（`ray_trainer.py` 加 `_make_noise_images_like`：`np.random.normal(127.5,64)`→clip→uint8→PIL，与 `_make_black_images_like` 同构；主逻辑加 `if ra_ctrl_mode=="gaussnoise"` 分支；`workers/config/actor.py` validator 白名单+`ra_ctrl_image_key`必填集合都加了 gaussnoise）。已用 `SelfDistillationConfig` 构造 + `py_compile` 冒烟验证通过。
 2. **发现并修复 `prepare_degraded_images.py` 的一个真 bug**：脚本对 HF Image 类型条目只读 `entry['path']` 当文件路径 `Image.open()`，但本项目 virl39k parquet 的图片是内嵌 `entry['bytes']`（`path` 只是不可解析的缓存产物字符串）——直接跑会 100% `FileNotFoundError`。已加 `load_source_image()`（优先读 bytes，走 `io.BytesIO`，无 bytes 才退化到 path），两个 degrade 函数签名从吃路径改成吃已打开的 `Image`。5 行冒烟测试验证通过（正确生成 292×210 的降质图）后跑全量。**这是 P34/P35 共用的基础设施 bug，P35（VA-OPD 复现）若还没跑到这步也受益于此修复**。
 3. **degrade parquet 全量生成中**：`data/virl39k_train_noimg_unfiltered_1img_degraded.parquet`（10% spatial-scale，论文口径），图片存 `data/images_degraded_unfiltered/`，日志 `logs/prepare_degraded_images_20260720.log`（CPU-only，与 GPU 训练并行跑，36039 行预计几分钟内跑完）。
+
+**📢 [301829143 07-20 22:5x] 用户调整优先级：P34 提到 S3/QA 前面**。wave2 12项批量eval（含手动补跑的 fc4_step120）已于 23:09 全部真实完成——两条链原本互相等待对方完成的逻辑已改：`p34_driver` 现直接等 wave2 完成即启动（不再等 S3/QA），`s3_qa_driver` 改为等 P34 完成后再启动（原本反过来）。改依赖前两条链都还在"等待中"、未消耗任何 GPU 时间，安全重挂。wave2 收尾时顺手清理了一个孤儿 vLLM 进程（fc4_step120 手动补跑遗留，已出完 9/9 分不受影响）。**P34a(noimg) 已于 23:14 开始训练**，P34b(degrade)/P34c(gaussnoise)/S3/QA1/QA2 依次排在后面。
+
+**⚠️ [301829143 07-21 00:0x] P34a(noimg) 两次attempt均在 step~16/90 确定性OOM（同一分配大小48.69GiB）**——非随机波动（`data.seed=null` 走固定默认种子，两次数据顺序完全相同，撞到同一 batch）。black(P26) 同配方@len6144 训练健康，说明 noimg 模式（ctrl 分支无图像token，与 hi 分支长度差异大）在这个 len 下存在真实的显存不稳定性，是 P34 本身的一个有价值发现（ctrl 设计选择对显存也有影响，不只对分数）。**已挂独立补跑链**（`logs/p34a_noimg_retry_driver_trial301829143.log`，等 P34b/c 跑完后接），沿用 T3b 验证过的降法：rollout_gpu_memory_utilization 阶梯 0.7(已失败)→0.55→0.45，**不改 MAX_PROMPT_LENGTH**（保持与 black@6144 的单因子可比性）。若阶梯降到 0.45 仍 OOM，需要人工决定是否改为降 len（那样会破坏与 black 的严格单因子对比，需要标注）。**又顺便发现并修复了 `prepare_degraded_images.py` 的第二个 bug**：部分图片条目（79条）连 `path` 字段都没有（只有 `bytes`），已在 `image_entry_path()` 加 bytes-hash 兜底，degrade parquet 已重新生成完整（36039行）。
+
+**⚠️ [301829143 07-21 00:0x] 用户指出重要安全事故**：wave2 批量eval driver 的 per-job 清理逻辑用了不按进程名过滤的 `nvidia-smi -i <gpu> --query-compute-apps=pid | kill -9` 裸PID清理，**极可能误杀了 keep_gpu**（用户手动重启修复）。已记入项目记忆 `feedback_never_delete_keepgpu.md`（追加了这次事故作为第二个案例）。当前跑着的 P34/S3QA/noimg-retry 链用的是 `wait_gpus_clear()`（只等待不主动kill），没有这个风险。
 4. **P34 三个 run 已挂链**（driver `logs/p34_driver_trial301829143.log`，等 S3/QA 完 + degrade parquet 就绪后自动串行）：P34a=noimg（`EXPERIMENT=noimg`现成分支）、P34b=degrade（`EXPERIMENT=degrade`+新生成parquet）、P34c=gaussnoise（`EXPERIMENT=black`默认+trailing override `ra_ctrl_mode=gaussnoise`）。三者均为 P26 配方（uniform×unfiltered×2B×len6144×90步）只改 ctrl_mode，对照现有 black(P26,66.64)。ckpt名 `Vision-OPD-contrast-uniform-{noimg,degrade,gaussnoise}-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301829143`，各自动 merge 30/60/90，独立失败不阻塞后段。
 | **301832756** | eval backlog（N3b/N3c/FC 曲线）在跑 | eval 跑完后加入训练池（接队列里最靠前的未认领项） | 当前专职 eval |
 
 ⚠️ **degrade parquet 共享**：P34 的 degrade 组和 P35（VA-OPD）用同一份论文口径 degrade 图（10% spatial-scale），301829143 生成一次，P35 直接复用同 NAS 路径，别重复生成。
 ⚠️ **eval backlog 独立轨**：20 项 eval（现剩 N3b/N3c/FC）由 301832756 跑，不占训练排班；Qwen3.5-2B 主表两行等它出数。
+
+## 📈 P37 — α 加密扫描（确定不敏感 range，2026-07-20 用户提出）
+
+**背景**：终局口径 α 三点 63.05(0.5)/66.64(1.0)/63.95(2.0)——峰在 α=1，两侧掉 ~3pp。同 default seed（同数据顺序，
+只有 GPU 非确定性 ~±1pp），所以 3pp 大概率真实。但 0.5/2.0 太极端、中间没点，看不出"不敏感 range"。
+**加密 α 附近**，判断 [0.75,1.5] 是否平坦：
+
+| # | α | 配置 | 状态 |
+|---|---|---|---|
+| P37a | **0.75** | 终局配置(uniform×unfiltered 2B 90步)只改 `ra_contrast_alpha=0.75` | ⏳ 待认领 |
+| P37b | **1.25** | 同上 α=1.25 | ⏳ 待认领 |
+| P37c | **1.5** | 同上 α=1.5 | ⏳ 待认领 |
+| P37d(可选) | 0.25 | 补低端极值 | 💤 看 0.5 有多低再定 |
+
+**判读**：若 0.75/1.0/1.25/1.5 都在 66±1pp → **"α 在 [0.75,1.5] 内不敏感，仅极端值 0.5/2.0 掉 ~3pp"**（好故事）；
+若中间也掉 → α 确实尖峰敏感（如实写）。3 个 2B run，各 ~3h。**📢 分配 301832756**（它 FCE 之后接；或任意空闲机），
+与已有 FA1(0.5)/P26(1.0)/FA2(2.0) 拼成 6 点 α 曲线。
+⚠️ 严格说每点应多 seed，但同 default seed 下 GPU 噪声 ~±1pp，6 点趋势足以判断 range，多 seed 留 rebuttal 备用。
 
 ## 🔥 P33 — no-anchor / pure-CD target 消融（2026-07-20 用户拍板"必须跑"，高优先）
 
@@ -589,7 +613,7 @@ ra_kd_loss 透传；`dp_actor.py:1369` 从 config 读；`config/actor.py`+`actor
 
 | # | 任务 | 说明 | 状态 |
 |---|---|---|---|
-| S2c | 2B answer-hint × unfiltered，90步，`data.seed=777` | 与 V-e3(默认,62.28★疑坏)/S2b(1234,68.44) 凑 3 seed；若 S2c 也 ≥base 则确认 V-e3 是孤立坏训练 | 🏃 **301832756 已启动（07-20 21:48，8卡，N4 后接）**：driver `scripts/run_s2c_301832756.sh`，ckpt名 `Vision-OPD-baseline-seed777-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301832756`，自动 merge 30/60/90。**⚠️ 与 301829143 的 S3（同目的、seed=42，用户直接下达）并行不冲突**——两个不同 seed 值、不同 ckpt 名，合起来是 4-seed（默认/1234/42/777）而非重复劳动 |
+| S2c | 2B answer-hint × unfiltered，90步，`data.seed=777` | 与 V-e3(默认,62.28★疑坏)/S2b(1234,68.44) 凑 3 seed；若 S2c 也 ≥base 则确认 V-e3 是孤立坏训练 | ✅ **完成（07-21 01:04，301832756，第4次尝试后成功）**：90/90，step30/60/90 已 merge → `Vision-OPD-baseline-seed777-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301832756`。**eval 待 mlx/本地**（建议 `s2c_answerhint_seed777_unfiltered_step90`，9-bench）。**过程记录**：前3次用本机系统栈依次踩 flash_attn ABI/缺tensorboard/numpy-pandas ABI 三层坏境问题，第4次改用 `conda activate qwen35` 一次通过——已写入 opsd/CLAUDE.md：本项目训练/eval 默认走 conda qwen35，不分模型是否 Qwen3.5。**与 301829143 的 S3（seed=42）并行不冲突**——合起来是 4-seed（默认/1234/42/777） |
 
 ★ V-e3 checkpoint 保留但主表弃用；如需复盘可查其 loss 曲线是否异常。
 
@@ -1437,11 +1461,13 @@ D3=`aa34e28ab94d1a96`（排队中）。
 
 | 模型 | WeMath(Strict) | MathVerse_MINI | MMMU_DEV_VAL | OCRBench(Norm) | MathVista_MINI | MMStar | HallusionBench(aAcc) |
 |---|---|---|---|---|---|---|---|
-| geo3k contrast-标准 4B | 54.38 | 🏃补跑中 | 65.33 | 82.2 | 76.4 | 70.20 | 73.40 |
-| geo3k contrast-保守 4B | 54.19 | 🏃补跑中 | 63.11 | 82.9 | 75.5 | 70.87 | 72.77 |
-| base-4B（对照） | 52.76 | 🏃补跑中 | 62.00 | 87.2 | （已有） | （已有） | （已有） |
+| geo3k contrast-标准 4B | 54.38 | 44.54 | 65.33 | 82.2 | 76.4 | 70.20 | 73.40 |
+| geo3k contrast-保守 4B | 54.19 | 53.17 | 63.11 | 82.9 | 75.5 | 70.87 | 72.77 |
+| base-4B（对照） | 52.76 | ⚠️15.23 | 62.00 | 87.2 | （已有） | （已有） | （已有） |
 
-（MathVerse_MINI 三行 07-20 18:5x 在 GPU1/2/3 补跑，~15min 出数后回填此表；MathVista overall 取
+（✅ MathVerse_MINI 三行 07-21 已回填。⚠️ base-4B MathVerse **15.23 反常偏低**——与 std 44.54/cons 53.17 差 ~30pp，
+不像纯训练收益，疑 base 模型在该 split 的判分/抽取问题，引用 D 组 base 对照行的 MathVerse 前需单独核验预测。
+MathVista overall 取
 answer-heavy 复算列。口径 caveat 见上：与 VA-OPD 只能引用式对比不同表混排。）
 
 **⚠️ [mlx session 2026-07-16 ~17:0x] 昨晚judge打爆疑云排查结果：judge 侧基本干净，真正的污染在
