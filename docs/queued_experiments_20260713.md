@@ -1,5 +1,47 @@
 # 排队实验 — 2026-07-13
 
+## 🔄 [301832756 07-22 03:3x] 领取P33插队重判 + 用户新任务：P33 no-anchor 换seed=1234 训练（稳定性对照）
+
+**P33插队重判**：已认领，独立开了`logs/rejudge_p33_priority.log`低并发(≤3路)串行8项，跟现有FCE批次并行不互相
+阻塞（关键三项HR4K/HR8K/HallusionBench排最前）。
+
+**GPU线变动**：4B repo-6k(62step)训练应用户要求暂停（`用不同的seed，跑一下无anchor的training，我想看看是不是
+稳定`——先不管4B repo-6k了，插队跑这个）。P33本身之前只训过默认seed（301832790），这次换 **seed=1234**（本项目
+惯例的"第二seed"，跟其它seed对照点一致），配置完全照抄`scripts/run_p33_pure_contrast_noanchor_2b.sh`（uniform
+weight, anchor_coef=0, α=1.0, unfiltered virl39k, len6144, 90步）只加`data.seed=1234`。ckpt名
+`Vision-OPD-pure-contrast-noanchor-uniform-seed1234-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301832756`，
+driver `scripts/run_p33_noanchor_seed1234_301832756.sh`，已启动。目的是看不同seed下no-anchor训练是否稳定
+（跟P33最初就带着的"崩溃是否比150步更早"稳定性关切一脉相承）。
+
+4B repo-6k(62step, uniform_weight=True，两处配置已修好)没有损失任何进度（停的时候还没到第一个训练step），
+后续等P33 seed1234腾出GPU再接回去。
+
+## 🔴 [devbox 07-22 03:1x] P33（no-anchor）全 8 项重判——🔴**高优 · judge 线插队优先**（含 HR4K/HR8K，用户 07-22 下达）
+
+> **🔴 高优先级**：judge 线请把本条**插到当前 FCE 20点批次之前**先跑（P33 卡着 paper「anchor 作用」的核心结论,
+> FCE step-curve 是锦上添花可稍后）。**关键三项 HR4K/HR8K/HallusionBench 排最前先判**,出这三项即可先下结论,其余 5 项随后补。
+
+P33 = `contrast-noanchor-uniform-2B`（anchor_coef=0, α=1, 纯 softmax(lp_hi−lp_ctrl)）。**training 已训完**（step10–90 齐,
+trial301832790）,**eval 也跑完**（9 数据集齐,07-21 04:49,`p33_noanchor_2b_step90_..._generic_eval`）,且**基本干净、非整批坏 pipeline**
+（BLINK 58.71 / MMStar 62.93 / POPE 88.51 都正常）——但**从未进低并发重判队列核实**,两个存疑项卡着 paper 的「anchor 作用」结论:
+- **Hallu 三均 = 38.97**（aAcc/fAcc/qAcc = 56.4/28.0/32.5）——介于坏值(~20/24)与其他模型干净值(~45/46)之间。
+- **HR4K/HR8K = 72.0/67.0**——比 ours(76.38/73.62) 低 4.4/6.6，是「除 Hallu 外」P33 vs ours 的**主要差异项**,而 HRBench 也走 GPT judge,同样需确认没踩限流。
+
+**→ 全 8 项重判**（MathVista 不走 MCQ judge、67.0 可信,免判）,低并发(≤3 路)。**关键三项优先**——先跑 HR4K/HR8K/Hallu,再补其余:
+```bash
+cd /mnt/bn/tns-algo-video-vlm-ruby/yijunliang/project/opsd/Vision-OPD
+# 关键三项先判（HR 是「除 Hallu 外」P33 vs ours 的主要差异项、也走 judge，Hallu 存疑）
+for ds in HRBench4K HRBench8K HallusionBench; do
+  bash scripts/rejudge_one.sh p33_noanchor_2b_step90 "$ds" 3
+done
+# 其余 5 项随后补
+for ds in BLINK MMStar MMBench_DEV_EN VStarBench POPE; do
+  bash scripts/rejudge_one.sh p33_noanchor_2b_step90 "$ds" 3
+done
+```
+判完看:① Hallu 三均是否升到 45+ 档（若仍 ~39 则是 P33 真实弱点=anchor 抑幻觉关键）;② HR4K/HR8K 是否回到 72/67 以上
+（确认非限流）。出数后据此定 paper「anchor 必要性」的口径,并回填 ledger（当前 ledger α=0 block 里 P33=68.91 系旧口径待替换）。
+
 ## 🔧 [301832756 07-22 02:5x] Qwen3.5-4B repo-6k：2处配置错误已修复重启
 
 **错误1（用户抓到）**：忘了加 `ra_uniform_weight=True`——本项目"ours"主配置的惯例（N4/N6都显式带这个flag）。
@@ -66,6 +108,16 @@ uniform_weight，纯offline改脚本；这次改steps又重启一次），已确
   Ray init 阶段（零真实训练时间浪费）改正重启，加上了这个 flag**。**301832756 的 4B repo6k 如果已经训完/正
   在跑，需要检查是否要补 `ra_uniform_weight=True` 重跑**——如果已经跑了大量步数，是否值得重跑由你/该机器
   自行判断（这不是本机能替它决定的事，仅作提醒）。
+
+  **⚠️ [301829143 07-22 02:5x 第二个配方问题，用户发现] 90步(bs32)截断是照抄 virl39k 惯例，对 repo-6k 不成立**：
+  repo-6k 数据小（切分后 5985 条），历史参考点"baseline×repo6k, 62/62步"用的是**默认 bs96 + 跑满 1 epoch**
+  （5985/96≈62），不是人为截断。90步(bs32)是从 virl39k（大数据集，故意早停避免长训练崩溃）照抄来的惯例，
+  对 repo-6k 既对不上历史参考点（62步是满epoch，90步/bs32反而不到1epoch）也没有截断的必要性依据。**本机已
+  改正**：去掉 `TRAIN_BATCH_SIZE=32` 和 `trainer.total_training_steps=90`，改用脚本默认 bs96 +
+  `trainer.total_epochs=1`（默认），让它自然跑满 1 epoch（~62步）。ckpt名改为
+  `Vision-OPD-contrast-standard-Qwen3.5-2B-repo6k-1ep-trial301829143`（去掉误导性的"-90step"后缀）。
+  只浪费了第一次 attempt 的 1h20m（Ray init 后到 14% 才发现），已重启。**同样提醒 301832756 的 4B repo6k
+  检查是否也用了 bs32+90步截断**——如果是，同样对不上 repo-6k 的历史惯例，是否重跑仍由该机器自行判断。
 
 **judge重判线（CPU/API，低并发3路，不占GPU）**：`scripts/rejudge_batch_lowconc.sh`，Stage1剩余4点
 （N4/S2c/QL1/QS1）全部32个组合已跑完，FCE缺口20点(120个组合)刚开始，进度 33/152，目前 0 失败/0 再次
