@@ -1,5 +1,21 @@
 # 排队实验 — 2026-07-13
 
+## 🔄 [301832756 07-22 00:2x] 双线并行状态：N6完成+新训练已上、judge重判过半
+
+**训练线（GPU，8卡）**：
+- **N6（Qwen3.5-9B OPSD/answer-hint × virl39k unfiltered，90步）✅ 训完+merge**
+  （`Vision-OPD-baseline-Qwen3.5-9B-virl39k-UNFILTERED1img-90step-trial301832756`）。eval 待排。
+- **新领任务（用户下达 07-22）：Qwen3.5-4B "ours"(contrast_standard) × 原生 repo-6k(`data/train.parquet`,
+  6241条，非本项目主口径 virl39k) 训练已启动**（8卡，len4096起，90步，`run_experiment_contrast_standard.sh`，
+  ⚠️关键点：不设 `ANSWER_VAL_TRAIN_FILE`，让脚本走默认逻辑用 `prepare_answer_val_split.py` 自动切分
+  train.parquet 出5985条训练集——已用日志"Generating train split: 5985 examples"核实真的是这个语料，不是
+  virl39k）。ckpt名 `Vision-OPD-contrast-standard-Qwen3.5-4B-repo6k-90step-trial301832756`。跑完后按用户
+  说的顺序接 **Qwen3.5-2B ours × repo-6k**。driver `scripts/run_qwen35_4b_repo6k_ours_301832756.sh`。
+
+**judge重判线（CPU/API，低并发3路，不占GPU）**：`scripts/rejudge_batch_lowconc.sh`，Stage1剩余4点
+（N4/S2c/QL1/QS1）全部32个组合已跑完，FCE缺口20点(120个组合)刚开始，进度 33/152，目前 0 失败/0 再次
+exact-match退化。跑完会systematic audit一遍再回填FCE曲线数字。
+
 ## ✅ [301832756 07-21 23:5x] α=0 matched baseline 重判完成，验证门槛通过，数字可用
 
 `rejudge_one.sh` 串行/低并发重判9个数据集全部完成，HallusionBench fAcc/qAcc 回到 40+ 区间
