@@ -1,5 +1,40 @@
 # 排队实验 — 2026-07-13
 
+## 🔄 [301832756 07-22] P33 no-anchor seed1234 训练进展：step18/90，稳定无崩溃迹象
+
+跑起来后entropy一直稳定在0.4-0.66区间波动，rollout_probs_diff_valid始终=1，没有任何NaN/崩溃/OOM信号。
+按用户要求判分线（judge）已全部停掉，本机现在**只跑这一个training**，不逐step汇报，用户问进度时再报。
+
+## 🗑️ [301832790 07-22] 本轮本地已完成/在跑清单——对应 mlx job 可删（用户拍板）
+
+本机（301832790）本 session 本地跑掉的任务，**对应 mlx 提交可以删**：
+- ✅ **HR8K 3份污染重跑** / **geo3k D组** / **G1（ours→GRPO 序贯）** / **α=0 matched + P33 no-anchor**（含干净重判，anchor 冗余定论入 ledger）
+- ✅ **P37b/c（α=1.25/1.5）** 训练完+eval 收尾；P37a(0.75) 两次 OOM 待定
+- 🏃 **N5（base-9B）+ N6（OPSD-9B）** eval 本地跑中（shim→NAS conda，GPU2/3）
+- ⚠️ FA1/FA2 判分已核验**干净**、无需重判
+> **口径提醒**：用户新指示——**以后 eval 打分不做 ZoomBench，只跑 9-bench**。
+
+## 🔴 [devbox 07-22 04:xx] α消融 + 公共基准同口径重判——🔴高优（paper α消融要定稿，用户很急）
+
+**问题**：α 消融当前非单调（α=0→64.31 干净重判，但 α=0.5→63.05 反而更低）——因为 **FA1(α=0.5)/FA2(α=2)/ours(α=1) 都是 07-18~20 的旧判、被 verbose-deflation 压低**，只有 α=0 在 07-21 23:5x 重判过。FA1 的 BLINK=52.2 反低于 α=0 的 56.4（α=0.5 该更好不该更低）= 压低铁证。**不重判到同口径,paper 放个假非单调 α 曲线是硬伤。**
+
+**→ 全 8 项同口径重判（低并发≤3路），优先级 ours > FA1/FA2：**
+```bash
+cd /mnt/bn/tns-algo-video-vlm-ruby/yijunliang/project/opsd/Vision-OPD
+# 🔴 最高优：ours(α=1)——同时是 anchor(P33对照)/control(black基准)/α消融 三组的公共基准，一次解锁三组
+for ds in HRBench4K HRBench8K HallusionBench BLINK MMStar MMBench_DEV_EN VStarBench POPE; do
+  bash scripts/rejudge_one.sh uniformweight_2b_unfiltered_step90 "$ds" 3
+done
+# 🔴 高优：FA1(α=0.5) / FA2(α=2)——让 α 曲线干净
+for mn in fa1_uniform_alpha05_unfiltered fa2_uniform_alpha20_unfiltered; do
+  for ds in HRBench4K HRBench8K HallusionBench BLINK MMStar MMBench_DEV_EN VStarBench POPE; do
+    bash scripts/rejudge_one.sh "$mn" "$ds" 3
+  done
+done
+```
+（MathVista 不走 MCQ judge、免判。α=0 已干净免判。）
+**判完**：① 重算 α 四点 Acc（应变干净单调、α=1 峰值）；② ours 干净值同时更新主表 2B ours 行 + 解锁 anchor(P33)/control(P34) 对照；③ **回填 paper α消融段**（Codex 刚写的 α=0.5/2 是坏值,重判后更新）。⚠️ 这条比下面 P33/FCE 更优先——paper α消融要靠它定稿。
+
 ## 🔄 [301832756 07-22 03:3x] 领取P33插队重判 + 用户新任务：P33 no-anchor 换seed=1234 训练（稳定性对照）
 
 **P33插队重判**：已认领，独立开了`logs/rejudge_p33_priority.log`低并发(≤3路)串行8项，跟现有FCE批次并行不互相
@@ -155,8 +190,8 @@ Stage1其余4点(N4/S2c/QL1/QS1)+FCE缺口20点的低并发批量重判仍在跑
 | QA2 | `checkpoints/Vision-OPD-contrast-uniform-alpha20-Qwen3.5-4B-virl39k-UNFILTERED1img-90step-trial301829143/global_step_90` | `qa2_uniform_alpha20_qwen35_4b_step90` | **qwen35 shim + conda**；同上，α 三点曲线第三点 |
 | P34b | `checkpoints/Vision-OPD-contrast-uniform-degrade-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301829143/global_step_90` | `p34b_ctrl_degrade_unfiltered_step90` | ctrl 消融，对照 black(P26,66.64)；无 shim |
 | P34c | `checkpoints/Vision-OPD-contrast-uniform-gaussnoise-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301829143/global_step_90` | `p34c_ctrl_gaussnoise_unfiltered_step90` | ctrl 消融，对照 black(P26,66.64)；无 shim |
-| P34a | `checkpoints/Vision-OPD-contrast-uniform-noimg-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-len4096-trial301829143/global_step_90` | `p34a_ctrl_noimg_len4096_step90` | ctrl 消融，**⚠️ len=4096**（其余三个 ctrl 消融都是 len6144，OOM 两次后改用；对比 black/degrade/gaussnoise 时须标注口径差异）；无 shim |
-| P37c | `checkpoints/Vision-OPD-contrast-alpha15-uniform-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301829143/global_step_90` | `p37c_alpha15_unfiltered_step90` | α 精细扫描第四点，与 P37a(0.75)/P26主配方(1.0)/P37b(1.25) 拼 α∈[0.75,1.5] 曲线；无 shim（07-22 00:47 训完+merge）。**✅ [mlx 07-22 01:0x] 已提交** job `6c7cd0b568467cae`（665/public.pool，1卡） |
+| P34a | `checkpoints/Vision-OPD-contrast-uniform-noimg-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-len4096-trial301829143/global_step_90` | `p34a_ctrl_noimg_len4096_step90` | ctrl 消融，**⚠️ len=4096**（其余三个 ctrl 消融都是 len6144，OOM 两次后改用；对比 black/degrade/gaussnoise 时须标注口径差异）；无 shim。~~mlx job `d73587e3`（原 job 被误停 STOP(7) 后重投，排队中）~~ **改由 301829143 本地跑（07-22 04:05，gpu1），mlx 这个 job 请手动取消，避免重复占用配额** |
+| P37c | `checkpoints/Vision-OPD-contrast-alpha15-uniform-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301829143/global_step_90` | `p37c_alpha15_unfiltered_step90` | α 精细扫描第四点，与 P37a(0.75)/P26主配方(1.0)/P37b(1.25) 拼 α∈[0.75,1.5] 曲线；无 shim（07-22 00:47 训完+merge）。~~**✅ [mlx 07-22 01:0x] 已提交** job `6c7cd0b568467cae`（665/public.pool，1卡，排队中未调度）~~ **改由 301829143 本地跑（07-22 04:05，gpu0），mlx 这个 job 请手动取消，避免重复占用配额** |
 
 **✅ [mlx session 07-21 23:4x] 6 个全部已提交**（**改用 665/public.pool 队列** —— 668/guarantee 队列 07-20/21 卡死；tokenizer 全 dict 正常，checkpoint 已核实齐）：S3=`a0aa24a626dee0cb` / QA1=`ffc28dc9ae1be7a4`（qwen35 shim+conda）/ QA2=`75aabe8590fba002`（qwen35 shim+conda）/ P34a=`b10d06f00ef00ac4` / P34b=`85052671a24795ed` / P34c=`970738806fcd08e7`。均 status=3 已受理（未被拒），待观察 public.pool 能否调度上 1 卡 eval。
 
@@ -1030,8 +1065,8 @@ S2c 复读仅 6、可信。OPSD 2B 三 seed：V-e3(低)/S2b(64.89 高)/S2c(61 �
 | # | 任务 | 说明 | 状态 |
 |---|---|---|---|
 | N4-reeval | **Qwen3.5-9B ours 重评**（9-bench，新 suite） | ckpt `...uniformweight-Qwen3.5-9B-...UNFILTERED...trial301832756/global_step_90`；⚠️ 跟坏 batch 的干净重评一起（Hallu 塌陷问题，验证 gate：fAcc/qAcc 回 40+）。conda qwen35 + shim + 独占端口 | ⏳ 待重评（并入 07-21 eval 重跑批） |
-| N5 | **Qwen3.5-9B base eval**（vanilla，9-bench 新 suite） | `MODEL_PATH=cache/Qwen3.5-9B`，`MODEL_NAME=vanilla_qwen35_9b`；conda qwen35 + shim；1 GPU（9B 单卡够，OOM 则 tp=2） | ⏳ 待认领 |
-| N6 | **Qwen3.5-9B OPSD 训练**（answer-hint × unfiltered，90步）+ eval | 同 P25(Qwen3.5-4B OPSD) 配方换 9B：`teacher_prompt_mode=answer_hint` + unfiltered parquet；⚠️ 9B 全词表蒸馏显存更紧，**len 从 4096 起步**，OOM 再降 rollout 池（T3b 套路）；conda qwen35；单 run 预估 5-7h/8卡 | ⏳ 待认领（训练类，需 8 卡） |
+| N5 | **Qwen3.5-9B base eval**（vanilla，9-bench） | `MODEL_PATH=cache/Qwen3.5-9B`，`MODEL_NAME=vanilla_qwen35_9b`；shim；1 GPU | 🏃 **301832790 本地跑中（07-22 04:0x，GPU2）**：更正——本机可跑 qwen3.5，shim 指向 **NAS 共享 conda** `/mnt/bn/.../yijunliang/miniconda3/envs/qwen35`（vllm 0.18/transformers 5.5），非本地 miniconda。**mlx 对应 job 可删**。9-bench 无 Zoom（用户新口径） |
+| N6 | **Qwen3.5-9B OPSD eval**（answer-hint × unfiltered step90，ckpt 已训完 merged by 301832756） | ckpt=`Vision-OPD-baseline-Qwen3.5-9B-virl39k-UNFILTERED1img-90step-trial301832756/global_step_90`；`MODEL_NAME=n6_answerhint_qwen35_9b_step90`；shim | 🏃 **301832790 本地跑中（07-22 04:1x，GPU3）**：训练早由 301832756 完成，本轮只做 eval。**mlx 对应 job 可删**。9-bench 无 Zoom。（N4 ours-9B 已由 301832756 评完，9B 行 base+OPSD+ours 三格补齐） |
 
 📢 **分配**：N4-reeval + N5 → 有 conda qwen35 环境的 eval 机（301832756 现有 full_redo 上下文，并入重评批）；
 N6（训练）→ 最先空出的 8 卡机（优先级低于 P33/P37 等核心消融，作 scale 矩阵补全）。
