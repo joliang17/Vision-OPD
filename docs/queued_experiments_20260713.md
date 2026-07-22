@@ -1,16 +1,71 @@
 # 排队实验 — 2026-07-13
 
+## 🔧 [301832756 07-22 02:5x] Qwen3.5-4B repo-6k：2处配置错误已修复重启
+
+**错误1（用户抓到）**：忘了加 `ra_uniform_weight=True`——本项目"ours"主配置的惯例（N4/N6都显式带这个flag）。
+**错误2（用户抓到）**：steps照抄N4/N6的90步，但**本仓库原生6k语料的历史惯例是62步=1个完整epoch**（virl39k才是
+90步）——查到多条历史记录"62/62步跑完"/`本仓库默认数据 train_answer.parquet，62步`确认。
+
+两处都已修：`ra_uniform_weight=True` + `trainer.total_training_steps=62`，checkpoint名改为
+`Vision-OPD-contrast-standard-Qwen3.5-4B-repo6k-62step-trial301832756`，merge点改为20/40/62。第一次错误版本
+只跑到step10-12就发现问题杀掉重启，没有浪费太多算力。当前跑的是修复后的第2次重启（第1次是漏了
+uniform_weight，纯offline改脚本；这次改steps又重启一次），已确认Train file走的是`train_answer.parquet`
+（真实repo-6k切分，5985条），训练正常推进中。
+
+## ✅ [devbox 07-22 00:4x] 更正：9B checkpoint 完好（是 devbox 查错目录，非 prune）+ 9B baseline & N5 两个 eval 登记（供 mlx 领取）
+
+**⚠️ 上一版本条目误报「9B 被 prune 删除」，作废——是 devbox 自己查错目录**：真实 checkpoint 在
+`Vision-OPD/checkpoints/`，但 devbox 把 cwd 切到 `opsd/` 后在 `opsd/checkpoints/`（一个 mtime=Jul-2、只剩 1 个老 dir 的空目录）下查，
+才误以为没了。用精确路径复核：`Vision-OPD/checkpoints/Vision-OPD-baseline-Qwen3.5-9B-...-trial301832756/` 和
+`...contrast-standard-uniformweight-Qwen3.5-9B-...` 的 **step30/60/90 全部在**，且两者 gs90 **均已 merge**
+（`config.json`+`model.safetensors` 齐，可直接 eval，无需重训）。**没有发生 prune，不用重训任何 9B。**
+- **ours（N4）**：9-bench eval 已完成，干净值在手（**Acc=80.05**：BLINK72.23/MMStar78.87/V*85.86/MathVista93.69/HR4K86.50/HR8K79.00/Hallu三均64.19）→ 可回填 ledger/paper 9B ours 行。
+- **baseline/OPSD**：checkpoint 完好且已 merge → **可直接 eval**（下方登记，非重训）。
+- **base（N5）**：原始 HF 模型在 → 可直接评。
+
+⚠️ 但「中间 step 被别的机器 prune」的真实风险仍在（CLAUDE.md 记过 07-19 global_step_180 事故）：eval baseline gs90 前，
+若担心被别机 prune，先 `cp -r` 一份 aside 再评。
+
+### 📮 9B baseline(OPSD) — eval（checkpoint 已 merge，可立即跑，供 mlx 领取）
+- **MODEL_PATH**（已 merge）：`Vision-OPD/checkpoints/Vision-OPD-baseline-Qwen3.5-9B-virl39k-UNFILTERED1img-90step-trial301832756/global_step_90`
+- **MODEL_NAME**：`n6_qwen35_9b_opsd_baseline_step90`
+- **DATASETS**（9-bench）：`BLINK,MMStar,MMBench_DEV_EN,VStarBench,MathVista_MINI,HRBench4K,HRBench8K,POPE,HallusionBench`
+- **env**：`conda activate qwen35` + `PYTHONPATH=$V/.syspkg_shim:$OPSD/VLMEvalKit`；判分**低并发（≤3 路）**，别 8 宽
+- 用途：9B 组 OPSD baseline 行，对照 N4(ours 80.05) 出 OPSD→ours 增益
+
+### 📮 N5 — Qwen3.5-9B base eval（可立即跑，供 mlx 领取）
+- **CKPT_PATH**（raw base，无需 merge）：`/mnt/bn/tns-algo-video-vlm-ruby/yijunliang/project/cache/Qwen3.5-9B`
+- **MODEL_NAME**：`n5_qwen35_9b_base_step0`
+- **DATASETS**（9-bench）：同上
+- **env**：同上（conda qwen35 + shim + VLMEvalKit 根 PYTHONPATH）；判分低并发（≤3 路），别 8 宽
+- 用途：补齐 Qwen3.5-9B 组 base 行；base→OPSD(N6)→ours(N4) 三格凑齐整组
+- **✅ [mlx 07-22 01:2x] 已提交** job `0781af8040f7dc57`（665/public.pool，1卡，conda qwen35+shim，base 用 MODEL_PATH 直接 serve）
+
 ## 🔄 [301832756 07-22 00:2x] 双线并行状态：N6完成+新训练已上、judge重判过半
 
 **训练线（GPU，8卡）**：
 - **N6（Qwen3.5-9B OPSD/answer-hint × virl39k unfiltered，90步）✅ 训完+merge**
   （`Vision-OPD-baseline-Qwen3.5-9B-virl39k-UNFILTERED1img-90step-trial301832756`）。eval 待排。
+  **✅ [mlx 07-22 01:1x] 已提交** job `c0645e40ea23d70c`（665/public.pool，**1卡**——9B 在 B200 183GB 单卡够跑，N4 用2卡是为提速非显存需要；qwen35 shim+conda；tokenizer str→dict 已修）。
 - **新领任务（用户下达 07-22）：Qwen3.5-4B "ours"(contrast_standard) × 原生 repo-6k(`data/train.parquet`,
   6241条，非本项目主口径 virl39k) 训练已启动**（8卡，len4096起，90步，`run_experiment_contrast_standard.sh`，
   ⚠️关键点：不设 `ANSWER_VAL_TRAIN_FILE`，让脚本走默认逻辑用 `prepare_answer_val_split.py` 自动切分
   train.parquet 出5985条训练集——已用日志"Generating train split: 5985 examples"核实真的是这个语料，不是
   virl39k）。ckpt名 `Vision-OPD-contrast-standard-Qwen3.5-4B-repo6k-90step-trial301832756`。跑完后按用户
   说的顺序接 **Qwen3.5-2B ours × repo-6k**。driver `scripts/run_qwen35_4b_repo6k_ours_301832756.sh`。
+  **⚠️ [301829143 07-22 00:5x] Qwen3.5-2B ours × repo-6k 已改由本机认领并启动**（用户直接下达，本机 8卡空闲，
+  不用等 301832756 的 4B 跑完再串行）：完全照抄 301832756 的配方（加权 contrast-standard，不设
+  `ANSWER_VAL_TRAIN_FILE`走默认切分train.parquet，len4096，conda qwen35，90步，8卡），driver
+  `logs/qwen35_2b_repo6k_driver_trial301829143.log`，ckpt名 `Vision-OPD-contrast-standard-Qwen3.5-2B-repo6k-90step-trial301829143`，
+  带双跑保护。**301832756 跑完 4B 后不用再接 2B，本机已覆盖**。
+
+  **⚠️ [301829143 07-22 01:0x 用户发现的重要问题] `run_qwen35_4b_repo6k_ours_301832756.sh` 缺了 `ra_uniform_weight=True`**：
+  这个脚本管自己叫"ours"，但终局配置的"ours"从 FINAL-WAVE 定稿起就是 **uniform（不加权）**（P26/P27/P28 全部
+  显式设 `ra_uniform_weight=True`）——301832756 的 4B repo6k 脚本没设这个 flag，实际跑的是**加权**的旧版
+  contrast-standard，不是当前定义的"ours"，跟其余终局配置结果不可比。**本机的 2B repo6k 已发现问题并在
+  Ray init 阶段（零真实训练时间浪费）改正重启，加上了这个 flag**。**301832756 的 4B repo6k 如果已经训完/正
+  在跑，需要检查是否要补 `ra_uniform_weight=True` 重跑**——如果已经跑了大量步数，是否值得重跑由你/该机器
+  自行判断（这不是本机能替它决定的事，仅作提醒）。
 
 **judge重判线（CPU/API，低并发3路，不占GPU）**：`scripts/rejudge_batch_lowconc.sh`，Stage1剩余4点
 （N4/S2c/QL1/QS1）全部32个组合已跑完，FCE缺口20点(120个组合)刚开始，进度 33/152，目前 0 失败/0 再次
@@ -49,6 +104,7 @@ Stage1其余4点(N4/S2c/QL1/QS1)+FCE缺口20点的低并发批量重判仍在跑
 | P34b | `checkpoints/Vision-OPD-contrast-uniform-degrade-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301829143/global_step_90` | `p34b_ctrl_degrade_unfiltered_step90` | ctrl 消融，对照 black(P26,66.64)；无 shim |
 | P34c | `checkpoints/Vision-OPD-contrast-uniform-gaussnoise-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301829143/global_step_90` | `p34c_ctrl_gaussnoise_unfiltered_step90` | ctrl 消融，对照 black(P26,66.64)；无 shim |
 | P34a | `checkpoints/Vision-OPD-contrast-uniform-noimg-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-len4096-trial301829143/global_step_90` | `p34a_ctrl_noimg_len4096_step90` | ctrl 消融，**⚠️ len=4096**（其余三个 ctrl 消融都是 len6144，OOM 两次后改用；对比 black/degrade/gaussnoise 时须标注口径差异）；无 shim |
+| P37c | `checkpoints/Vision-OPD-contrast-alpha15-uniform-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301829143/global_step_90` | `p37c_alpha15_unfiltered_step90` | α 精细扫描第四点，与 P37a(0.75)/P26主配方(1.0)/P37b(1.25) 拼 α∈[0.75,1.5] 曲线；无 shim（07-22 00:47 训完+merge）。**✅ [mlx 07-22 01:0x] 已提交** job `6c7cd0b568467cae`（665/public.pool，1卡） |
 
 **✅ [mlx session 07-21 23:4x] 6 个全部已提交**（**改用 665/public.pool 队列** —— 668/guarantee 队列 07-20/21 卡死；tokenizer 全 dict 正常，checkpoint 已核实齐）：S3=`a0aa24a626dee0cb` / QA1=`ffc28dc9ae1be7a4`（qwen35 shim+conda）/ QA2=`75aabe8590fba002`（qwen35 shim+conda）/ P34a=`b10d06f00ef00ac4` / P34b=`85052671a24795ed` / P34c=`970738806fcd08e7`。均 status=3 已受理（未被拒），待观察 public.pool 能否调度上 1 卡 eval。
 
@@ -938,8 +994,8 @@ N6（训练）→ 最先空出的 8 卡机（优先级低于 P33/P37 等核心�
 | # | α | 配置 | 状态 |
 |---|---|---|---|
 | P37a | **0.75** | 终局配置(uniform×unfiltered 2B 90步)只改 `ra_contrast_alpha=0.75` | 🏃 **301832790 认领（07-21 20:4x，8卡空闲接）**：driver `run_p37_alpha_curve_20260721.sh` 串行 a→b→c，ckpt名 `Vision-OPD-contrast-alpha075-uniform-...-trial301832790`，自动 merge 30/60/90 |
-| P37b | **1.25** | 同上 α=1.25 | 🏃 **301829143 认领并挂链（07-21 21:06）**：等 P34 noimg@4096（32%时挂链，~56min ETA）跑完后自动启动，driver `logs/p37b_driver_trial301829143.log`，带双跑保护（先查有无别机已产出 checkpoint）。ckpt名 `Vision-OPD-contrast-alpha125-uniform-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301829143`，自动 merge 30/60/90，~3h |
-| P37c | **1.5** | 同上 α=1.5 | 🏃 **301829143 认领并启动（07-21 22:27）**：P37b 被 301832790 抢跑（其未按计划剥掉 b/c，已到 step40+，双跑保护正确跳过避免重复浪费），改接 P37c，8卡空闲直接开跑。ckpt名 `Vision-OPD-contrast-alpha15-uniform-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301829143`，driver `logs/p37c_driver_trial301829143.log`，自动 merge 30/60/90，~3h | 
+| P37b | **1.25** | 同上 α=1.25 | 🏃 **301829143 认领并挂链（07-21 21:06）**：等 P34 noimg@4096（32%时挂链，~56min ETA）跑完后自动启动，driver `logs/p37b_driver_trial301829143.log`，带双跑保护（先查有无别机已产出 checkpoint）。ckpt名 `Vision-OPD-contrast-alpha125-uniform-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301829143`，自动 merge 30/60/90，~3h。**✅ [mlx 07-22 01:1x] 实际已由 301832790 的 P37 串行 driver 训完**（checkpoint 在 `...trial301832790/global_step_90`，cfg-OK/tok-dict），**eval 已提交** job `cad7fa4953324e8c`（665/public.pool，1卡，MODEL_NAME `p37b_alpha125_unfiltered_step90`）；本地未在跑，不撞车。⚠️ P37a(α=0.75, trial301832790) 当前只到 step10，未就绪 |
+| P37c | **1.5** | 同上 α=1.5 | ✅ **301829143 训完（07-22 00:47，90/90，2h20m/8卡）**+merge+prune → `Vision-OPD-contrast-alpha15-uniform-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301829143`，eval 已列入本文档最上方 mlx 待办表。8卡已空闲 | 
 | P37d(可选) | 0.25 | 补低端极值 | 💤 看 0.5 有多低再定 |
 
 **判读**：若 0.75/1.0/1.25/1.5 都在 66±1pp → **"α 在 [0.75,1.5] 内不敏感，仅极端值 0.5/2.0 掉 ~3pp"**（好故事）；
