@@ -1,6 +1,112 @@
 # 排队实验 — 2026-07-13
 
-## 🔴 [301832756 07-21] 认领"HallusionBench/HRBench判分塌陷"任务：根因找到，范围比报告的大得多
+## ✅ [301832756 07-21 23:5x] α=0 matched baseline 重判完成，验证门槛通过，数字可用
+
+`rejudge_one.sh` 串行/低并发重判9个数据集全部完成，HallusionBench fAcc/qAcc 回到 40+ 区间
+（clean run 参照 42-53），验证门槛过了。**这是干净数据，可采信**，供 paper α=0 vs α=1(ours) 消融使用：
+
+| 数据集 | 污染值(作废) | 干净值(重判后，可用) |
+|---|---:|---:|
+| BLINK | 44.3 | 56.4 |
+| MMStar | 47.4 | 60.1 |
+| MMBench_DEV_EN | 43.1 | 76.3 |
+| VStarBench | 72.8 | 74.3 |
+| HRBench4K | 64.0 | 74.0 |
+| HRBench8K | 60.5 | 68.0 |
+| POPE (acc) | 89.4 | 89.5 |
+| HallusionBench aAcc/fAcc/qAcc | 47.4/19.9/24.4 | 68.6/45.4/46.4 |
+| MathVista_MINI | 63.9 | 63.9（未受污染，单独排查过，不变）|
+
+Stage1其余4点(N4/S2c/QL1/QS1)+FCE缺口20点的低并发批量重判仍在跑（`scripts/rejudge_batch_lowconc.sh`，
+`logs/rejudge_batch_lowconc.log`），出完再回填。N6(Qwen3.5-9B OPSD训练)与本条并行不冲突，进展中。
+
+## 📮 [301829143 07-21 22:3x] 6 个 checkpoint 训完+merge，尚未评测，请 mlx 提交
+
+全部 9-bench（`BLINK,MMStar,MMBench_DEV_EN,VStarBench,MathVista_MINI,HRBench4K,HRBench8K,POPE,HallusionBench`），
+未在此列出的其他机器/历史产物请勿重复提交（各自 mlx job_id 已记在对应任务段落里）。
+
+| # | MODEL_PATH | 建议 MODEL_NAME | 备注 |
+|---|---|---|---|
+| S3 | `checkpoints/Vision-OPD-baseline-seed42-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301829143/global_step_90` | `s3_answerhint_seed42_unfiltered_step90` | 与 S2b(seed1234,68.44)/S2c(seed777) 凑 4-seed 三角验证；无 shim，标准 2B env |
+| QA1 | `checkpoints/Vision-OPD-contrast-uniform-alpha05-Qwen3.5-4B-virl39k-UNFILTERED1img-90step-trial301829143/global_step_90` | `qa1_uniform_alpha05_qwen35_4b_step90` | **qwen35 shim + conda**；与主配方α=1.0(P28,79.18)/QA2(α=2.0) 拼 Qwen3.5-4B 的 α 三点曲线 |
+| QA2 | `checkpoints/Vision-OPD-contrast-uniform-alpha20-Qwen3.5-4B-virl39k-UNFILTERED1img-90step-trial301829143/global_step_90` | `qa2_uniform_alpha20_qwen35_4b_step90` | **qwen35 shim + conda**；同上，α 三点曲线第三点 |
+| P34b | `checkpoints/Vision-OPD-contrast-uniform-degrade-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301829143/global_step_90` | `p34b_ctrl_degrade_unfiltered_step90` | ctrl 消融，对照 black(P26,66.64)；无 shim |
+| P34c | `checkpoints/Vision-OPD-contrast-uniform-gaussnoise-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301829143/global_step_90` | `p34c_ctrl_gaussnoise_unfiltered_step90` | ctrl 消融，对照 black(P26,66.64)；无 shim |
+| P34a | `checkpoints/Vision-OPD-contrast-uniform-noimg-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-len4096-trial301829143/global_step_90` | `p34a_ctrl_noimg_len4096_step90` | ctrl 消融，**⚠️ len=4096**（其余三个 ctrl 消融都是 len6144，OOM 两次后改用；对比 black/degrade/gaussnoise 时须标注口径差异）；无 shim |
+
+**✅ [mlx session 07-21 23:4x] 6 个全部已提交**（**改用 665/public.pool 队列** —— 668/guarantee 队列 07-20/21 卡死；tokenizer 全 dict 正常，checkpoint 已核实齐）：S3=`a0aa24a626dee0cb` / QA1=`ffc28dc9ae1be7a4`（qwen35 shim+conda）/ QA2=`75aabe8590fba002`（qwen35 shim+conda）/ P34a=`b10d06f00ef00ac4` / P34b=`85052671a24795ed` / P34c=`970738806fcd08e7`。均 status=3 已受理（未被拒），待观察 public.pool 能否调度上 1 卡 eval。
+
+## ☠️ [devbox 07-21 ~09:1x] 只剩 3 台活机——301761390 已死，按 3 机重排
+
+**301761390 确认死亡**（12h 无任何 checkpoint/log 产出；其他 3 台近期都有活动）。活机 = **301832790 / 301829143 / 301832756**。
+3 台跑不了"N6 + 3 P37 并行"（需 4 台），重排（N6 最高优）：
+
+| 机器 | 现状 | 安排 |
+|---|---|---|
+| **301832756** | judge 重判（GPU 闲！judge 只吃 CPU/API） | 🔥 **N6(9B OPSD，最高优) 立即上**——GPU 跑训练，judge API 侧并行，不浪费闲 GPU |
+| **301832790** | P37a(α0.75) 在跑 | P37a → 完接 **P37c(α1.5)** |
+| **301829143** | P34 noimg 收尾 | → **P37b(α1.25)** |
+
+后续：P37 三点出完(P37a/b 并行~3h + P37c 接~3h) → P35/P36 由先空的机器接。
+⚠️ N6 在 301832756 上和 judge 重判并行：GPU=N6 训练，CPU/API=judge 低并发，两者不抢资源。
+全部 eval 走 mlx（用户已切 mlx session）。**下方 09:0x「4 机」那条作废，以本条 3 机为准。**
+
+## 🔄 [devbox 07-21 ~09:0x 更正] 每台机器都有 conda——N6 不锁 301832756，按优先级重分配
+
+**更正**：之前误以为只有 301832756 有 conda qwen35，把 N6 绑给它。实际**每台都有 conda**，N6 可给任意空闲 8 卡机。
+按用户优先级（N6 高 > P37 中 > P35/P36 低）重分：
+
+| 机器 | 分配 |
+|---|---|
+| 301832790 | P37a(α0.75，running) → 完接 P35 |
+| 301829143 | P34 noimg 收尾 → **P37b(α1.25)** |
+| 301832756 | judge 重判(CPU/API，GPU闲)——GPU 塞 **P37c(α1.5)** 或 N6，不冲突 |
+| 301761390 | 若空 → **N6(9B OPSD，最高优，8卡专机5-7h)** |
+
+**要点**：① N6 最高优，给最先腾出整台 8 卡的机器（301761390 优先，或 756 的闲 GPU）；
+② 301832756 的 GPU 现在闲着别空转（judge 只吃 CPU/API），塞 P37c/N6；③ P37 三台并行~3h，N6~6h，
+P37 机器先空→接 P35/P36。全部 eval 走 mlx（用户已切 mlx session 提交推理）。
+
+## ⚡ [devbox 07-21 ~08:5x] P37 拆串行为并行（防撞车 + 提速 9h→3h）
+
+现状：P37a/b/c 被 301832790 排成**串行**一台跑（~9h）；但机器2(301829143,P34 noimg 收尾)要空出来找活。
+**改并行**：P37a 留 301832790（已在跑）；**P37b→301829143**（P34 后接，别重跑 a）；**P37c→下一台空机**。
+301832790 的串行 driver 请剥掉 b/c 段（双跑保护：以先产出 checkpoint 的为准）。→ 三个 α 点并行 ~3h 一波出完。
+
+## 🏋️ [devbox 07-21] GPU 全跑 training，推理走 mlx（用户切 mlx session 提交推理）
+
+**分工**：所有 eval 推理由用户在 mlx session 提交；本地 4 台机器 GPU **专注 training**（不空转等 judge）。
+盘点后**待训占 GPU 的还剩 6 个**（P33/α=0/P34 三 ctrl 已训完，只差 eval→走 mlx）：
+
+| 优先 | 训练任务 | 配置 | 分配 |
+|---|---|---|---|
+| 🔥**高** | **N6 Qwen3.5-9B OPSD** | answer-hint×unfiltered，len4096起，8卡5-7h，conda（同 P25 换 9B）| **301832756**（有 conda，judge 线旁边补，GPU 跑 N6）——补齐 9B 组 OPSD 行 |
+| **中** | **P37a α=0.75** | 终局配置 `ra_contrast_alpha=0.75`，2B 90步 | α 加密扫描（不敏感 range）|
+| **中** | **P37b α=1.25** | `ra_contrast_alpha=1.25` | 同上 |
+| **中** | **P37c α=1.5** | `ra_contrast_alpha=1.5` | 同上 |
+| 低 | **P35 VA-OPD** | `ra_target_mode=teacher`+`ra_weighting_mode=vaopd_grouped`+`ra_rollout_reweight=True`+degrade ctrl（parquet 现成）| P37 后接 |
+| 低 | **P36 dynamic α** | 需加 α schedule 代码，1.0→0.0 linear，训 200+步 | 最后 |
+
+**分配（4 机，07-21 用户定优先级）**：
+- **N6（最高优）→ 301832756**（唯一有 conda 的，8卡跑 9B OPSD 训练；judge 重判在旁边低并发并行）
+- **P37a/b/c（中优）→ 其余 3 台空闲机各领一个并行**（各 2B 90步 ~3h），一波出完 α 六点曲线
+- **P35/P36（低）→ P37 之后接**（谁先空谁领）
+⚠️ 全部 eval 走 mlx，本地不跑 judge（除 301832756 在补的历史欠账重判）。
+
+——别让 8 卡等 Azure judge
+
+**关键认识**：重判卡在 Azure judge API 限流（低并发 2-3 串行补判），**这层不吃 GPU**；而 8 张卡现在闲着。
+→ **让 GPU 立刻去跑推理/训练，judge 重判在旁边低并发慢慢补，两条线并行**。
+
+**301832756 建议安排（GPU 线 + judge 线并行）**：
+- **judge 线（不占 GPU）**：α=0 验证门过后，低并发 2-3 批量重判 Stage1 其余4点 + FCE 20点（`rejudge_one.sh` 加低并发）
+- **GPU 线（8卡，立即起）**：judge 在补分的同时，GPU 去跑 **N5（9B base eval 推理）→ N6（9B OPSD 训练）**
+  - N5 的 inference 用 GPU 出预测，它的 judge 排进上面的 judge 线（同样低并发，别再 8 宽）
+  - N6 是纯训练，完全不碰 judge，GPU 直接跑
+  - ⚠️ 新推理产出的 judge 也走低并发通道，避免重蹈限流覆辙
+→ 效果：judge 慢慢补历史欠账的同时，GPU 不空转、9B 组照常推进。
+
+"HallusionBench/HRBench判分塌陷"任务：根因找到，范围比报告的大得多
 
 接手下面 🔴🔴「二次核实」那条分配给本机的任务。**根因确认**：不是 HallusionBench/HRBench 独有，是
 `vlmeval` 的 `_build_mcq_judge_or_none`/YorN 评测在**每个数据集开始评测前只调用一次
@@ -47,6 +153,16 @@
 
 **α=0 matched baseline vs 其它组普遍偏低**（尤其 MMStar/MMBench 差 20+pp）——对比 tilt 项（α）确实在
 起作用，不是噪音，符合"ours α=1 更强"的预期方向。这是本轮最高优先级的那条 paper 消融，结论可用。
+
+> **🔴🔴 [301832790 07-21 21:x 更正——上表 α=0 的 BLINK/MMStar/MMBench 仍是 exact-match 污染值，勿用！]**
+> 本机独立训练了同一个 α=0（`...alpha0-uniform...trial301832790`）并**全 9 项 GPT-judge 重判干净**（unset ALL_PROXY
+> 版）。对照发现上表 α=0 的 **HR/VStar/MathVista/Hallu/POPE 与我干净值一致**（那几项 exact-match≈GPT-judge），
+> 但 **BLINK/MMStar/MMBench 三项上表仍是污染值**（socksio 修复后并未重判这三项）：BLINK 44.3→**55.29** /
+> MMStar 47.4→**59.33** / MMBench 43.1→**76.03**（MMBench 差 33pp！）。**权威干净 α=0（从 judge log RESULT_JSON 提取）**：
+> BLINK 55.29 / MMStar 59.33 / MMBench 76.03 / VStar 74.35 / MathVista 64.50 / HR4K 62.62 / HR8K 57.38 /
+> POPE 89.40 / Hallu三均 29.35（aAcc 46.16）/ Zoom 39.17 → **7-bench(含MMBench)=64.21**。
+> **结论方向不变但数值订正**：α=0=64.21 **< base 66.05**（纯自蒸馏主动伤害），**ours−α=0=+6.47pp = 对比锐化承重净贡献**
+> （非上表用污染值算出的"差20+pp"）。同批 P33(no-anchor)=68.91 已重判。详见 `plan_beyond_paper_20260719.md` 附表。
 
 **FCE 30点曲线（FC1=uniform/unfiltered, FC4=OPSD/answer-hint × 7-bench, 30/60/90/120/150五点是之前留下的
 +这次新补的10个缺口点×2系列）现在完整了**——15个 step（10/20/…/150）× 2 系列全部有真实 7-bench 数据。
@@ -185,8 +301,16 @@ env var 更安全。
 > α<0 仍拒；已 smoke-test 验证）。driver `scripts/run_alpha0_matched_baseline_20260720.sh`（armed，
 > 等 G1 9-bench + D 组 eval 腾出 8 卡后 fresh 启动，训完自动 merge 30/60/90）。
 > ckpt = `Vision-OPD-contrast-alpha0-uniform-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301832790`。
-> **状态**：🏃 armed（driver 已挂起等 GPU）。训完后 9-bench+Zoom 主口径 eval → 回填主表 2B 板块 +
-> paper_notes.md §3 + 总账 ledger 消融区。
+>
+> **✅ 训练完成（07-21 01:42）**：α=0 90/90 merge；P33（no-anchor）串在其后同日训完 merge。
+> **⚠️ eval 撞污染，重判中（07-21）**：α=0 + P33 的 9-bench（本机 driver 04:44 跑）整批被
+> **judge API 失败→静默 exact-match 回退** 污染，judge 依赖项全被压低。**反直觉关键点：VStarBench/
+> HRBench4K/HRBench8K 也走 GPT judge、也被污染**（POPE 才是唯一纯规则 yes/no，不受影响）。
+> 修复 = `unset ALL_PROXY` + 保留 `http_proxy=7890` + byteintl 进 no_proxy，删缓存重判（纯 API 不占卡）。
+> **HR 的 exact-match≈GPT-judge（干净字母答案），HR 重判后基本不变——α=0 的 HR 低是真实的**。
+> **⚠️ 重判值须从 judge log 的 `RESULT_JSON=` 读，别读 `*_acc.csv`（run_normal_eval.py 不覆盖它，会读到旧污染值）**。
+> 与 301832756 的"xlsxwriter 缺失→零分"是不同失败模式。干净终表出全后回填主表+paper_notes§3+ledger。
+> **G1 9-bench 经查完全干净（8/8 judge 正常），判定 70.68/Zoom44.97 不受影响**。
 
 ## ✅ [301832756 07-20 12:0x] QS1 完成（len4096），本机再次清空
 
@@ -694,7 +818,7 @@ ra_divergence_alpha=0.0  full_logit_distillation=True  distillation_topk=null
 **✅ [301829143 07-21] P34 收尾状态**：
 - **P34b(degrade)✅** 09:19 训完（90/90，慢，385s/步——图片每步磁盘读取解码开销，非报错），step30/60/90 已 merge → `Vision-OPD-contrast-uniform-degrade-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301829143`
 - **P34c(gaussnoise)✅** 11:43 训完（90/90），step30/60/90 已 merge → `Vision-OPD-contrast-uniform-gaussnoise-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301829143`
-- **P34a(noimg) rollout_gpu_util=0.55 阶梯尝试失败，且是结构性失败不是运气差**：不是 OOM，而是把 rollout 显存压太低后 vLLM 自己的 KV cache 分配不出来（`ValueError: No available memory for the cache blocks`）——**actor backward 要"少占"和 rollout 自己要"够用"是直接冲突的两个约束，降 gpu_util 这个方向本身就走不通**，未再尝试 0.45（同样会更糟）。**改回用户建议的方案：MAX_PROMPT_LENGTH=4096**（放弃保持与 black@6144 单因子严格可比的执念，用长度换稳定性）。**已挂链**（`logs/p34a_noimg_len4096_driver_trial301829143.log`，等 S3/QA1/QA2 跑完后接，8卡），ckpt名 `Vision-OPD-contrast-uniform-noimg-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-len4096-trial301829143`。**⚠️ 结果解读须知**：本行 len=4096，其余三个 ctrl 消融（black/degrade/gaussnoise）都是 len=6144，引用/对比时必须标注这个口径差异。
+- **P34a(noimg) rollout_gpu_util=0.55 阶梯尝试失败，且是结构性失败不是运气差**：不是 OOM，而是把 rollout 显存压太低后 vLLM 自己的 KV cache 分配不出来（`ValueError: No available memory for the cache blocks`）——**actor backward 要"少占"和 rollout 自己要"够用"是直接冲突的两个约束，降 gpu_util 这个方向本身就走不通**，未再尝试 0.45（同样会更糟）。**改回用户建议的方案：MAX_PROMPT_LENGTH=4096**（放弃保持与 black@6144 单因子严格可比的执念，用长度换稳定性）。**已挂链**（`logs/p34a_noimg_len4096_driver_trial301829143.log`，等 S3/QA1/QA2 跑完后接，8卡），ckpt名 `Vision-OPD-contrast-uniform-noimg-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-len4096-trial301829143`。**⚠️ 结果解读须知**：本行 len=4096，其余三个 ctrl 消融（black/degrade/gaussnoise）都是 len=6144，引用/对比时必须标注这个口径差异。**✅ [301829143 07-21 22:22] noimg@4096 训完（90/90）+merge+prune 完成——P34 全部四个 ctrl 消融（black=P26主配方 + degrade + gaussnoise + noimg@4096）训练侧收官**，eval 待 mlx。P37b（α=1.25）已自动接力启动（8卡）。
 - **S3(第三seed=42)✅** 07-21 13:31 训完+merge → `Vision-OPD-baseline-seed42-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301829143`。**QA1(Qwen3.5-4B α=0.5)✅** 16:51 训完+merge → `Vision-OPD-contrast-uniform-alpha05-Qwen3.5-4B-virl39k-UNFILTERED1img-90step-trial301829143`。**QA2(Qwen3.5-4B α=2.0)✅** 20:11 训完+merge+prune → `Vision-OPD-contrast-uniform-alpha20-Qwen3.5-4B-virl39k-UNFILTERED1img-90step-trial301829143`。**S3/QA 全链完成（07-21 20:14），三者 eval 均待 mlx**（S3 建议 `s3_answerhint_seed42_unfiltered_step90`，与 S2b/S2c 凑 4-seed；QA1/QA2 建议 `qa1_uniform_alpha05_qwen35_4b_step90`/`qa2_uniform_alpha20_qwen35_4b_step90`，与主配方α=1.0(P28,79.18)构成 Qwen3.5-4B 的 α 三点曲线）。**noimg@4096 补跑已挂链**（`logs/p34a_noimg_len4096_driver_trial301829143.log`），等看门狗轮询检测到即启动，8卡独占。
 
 **⚠️ [301829143 07-21 00:0x] 用户指出重要安全事故**：wave2 批量eval driver 的 per-job 清理逻辑用了不按进程名过滤的 `nvidia-smi -i <gpu> --query-compute-apps=pid | kill -9` 裸PID清理，**极可能误杀了 keep_gpu**（用户手动重启修复）。已记入项目记忆 `feedback_never_delete_keepgpu.md`（追加了这次事故作为第二个案例）。当前跑着的 P34/S3QA/noimg-retry 链用的是 `wait_gpus_clear()`（只等待不主动kill），没有这个风险。
@@ -761,6 +885,19 @@ S2c 复读仅 6、可信。OPSD 2B 三 seed：V-e3(低)/S2b(64.89 高)/S2c(61 �
 
 📢 分配 301832756（本机有 full_redo 上下文），或任意有干净 VLMEvalKit 环境的机器；先修一个（如 α=0）验证 Hallu 恢复再放开全批。
 
+## 📌 [devbox 07-21 分配] 301832756 已空（full_redo 收尾），有 conda qwen35——接 9B 组
+
+301832756 跑完全量重跑现空闲。分配（它有 conda qwen35 + shim，最适合 Qwen3.5 系）：
+| 序 | 任务 | 为什么给它 |
+|---|---|---|
+| 1 | **N5：Qwen3.5-9B base eval**（vanilla，9-bench 新 suite，conda+shim，1卡/OOM则tp2） | 有 conda 环境、快、补 9B base 行 |
+| 2 | **N6：Qwen3.5-9B OPSD 训练**（answer-hint×unfiltered，len4096 起，8卡 5-7h）+ eval | 有 conda、8卡空、补 9B OPSD 行 |
+| （待你确认）| 800G 清理：FC1/FC4 原始 FSDP 分片可删，保留 15 个 merged step | 破坏性操作，等你点头 |
+
+⚠️ **未决**：Hallu fAcc/qAcc 塌陷（18-24 vs clean 42-47）——19:5x 那条只看了 aAcc，主表 Hallu 三均仍存疑。
+建议 N5 跑完先抽查它的 Hallu fAcc/qAcc 是否回到 40+（对照 clean base 的 45.9/47.9）——若仍低，说明 eval
+的 Hallu fAcc/qAcc dump 还有残留 bug，需在采信任何 Hallu 三均前定位；若 N5 正常则是坏 batch 的孤立问题。
+
 ## 🆕 N5/N6 — 补齐 Qwen3.5-9B 主表组（2026-07-21 用户拍板扩到 6 底座）
 
 现状：Qwen3.5-9B 只有 ours(N4) 训完（ckpt merged，eval 待重评）；base/OPSD 缺。补齐后主表 = **6 底座**
@@ -785,8 +922,8 @@ N6（训练）→ 最先空出的 8 卡机（优先级低于 P33/P37 等核心�
 | # | α | 配置 | 状态 |
 |---|---|---|---|
 | P37a | **0.75** | 终局配置(uniform×unfiltered 2B 90步)只改 `ra_contrast_alpha=0.75` | 🏃 **301832790 认领（07-21 20:4x，8卡空闲接）**：driver `run_p37_alpha_curve_20260721.sh` 串行 a→b→c，ckpt名 `Vision-OPD-contrast-alpha075-uniform-...-trial301832790`，自动 merge 30/60/90 |
-| P37b | **1.25** | 同上 α=1.25 | 🏃 301832790（同 driver，a 后接）`...-alpha125-...` |
-| P37c | **1.5** | 同上 α=1.5 | 🏃 301832790（同 driver，b 后接）`...-alpha15-...` |
+| P37b | **1.25** | 同上 α=1.25 | 🏃 **301829143 认领并挂链（07-21 21:06）**：等 P34 noimg@4096（32%时挂链，~56min ETA）跑完后自动启动，driver `logs/p37b_driver_trial301829143.log`，带双跑保护（先查有无别机已产出 checkpoint）。ckpt名 `Vision-OPD-contrast-alpha125-uniform-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301829143`，自动 merge 30/60/90，~3h |
+| P37c | **1.5** | 同上 α=1.5 | 🏃 **301829143 认领并启动（07-21 22:27）**：P37b 被 301832790 抢跑（其未按计划剥掉 b/c，已到 step40+，双跑保护正确跳过避免重复浪费），改接 P37c，8卡空闲直接开跑。ckpt名 `Vision-OPD-contrast-alpha15-uniform-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301829143`，driver `logs/p37c_driver_trial301829143.log`，自动 merge 30/60/90，~3h | 
 | P37d(可选) | 0.25 | 补低端极值 | 💤 看 0.5 有多低再定 |
 
 **判读**：若 0.75/1.0/1.25/1.5 都在 66±1pp → **"α 在 [0.75,1.5] 内不敏感，仅极端值 0.5/2.0 掉 ~3pp"**（好故事）；
