@@ -1,5 +1,39 @@
 # 排队实验 — 2026-07-13
 
+## 🔄 [301832756 07-22] FCE批次(120组合)已恢复，跳过已完成的68个只补剩余52个
+
+用户之前叫停judge（"不要跑judge"/"只跑training"），FCE批次在99/152时被kill；现在用户要求继续，已从
+`rejudge_batch_lowconc.log`解析出68个真正完成的FCE组合（另32个是Stage1的，不在这批范围内），生成
+`scripts/rejudge_batch_lowconc_resume.sh` 跳过这68个只补剩余52个，低并发(3路)继续跑，不重复浪费。
+GPU线（P33 no-anchor seed1234训练）不受影响，继续跑着。
+
+## 🔵 [devbox 07-22 ~05:xx] P33 step60 eval + ours FC1 step60 同口径重判（验证 anchor 中段 acc 假设，用户 07-22 下达）
+
+**假设**：anchor 在训练中段抑制语言漂移（rollout CJK%：step50/70 ours=6.2/8.6% vs P33=14.1/16.4%，约减半），
+故 **step60 的 eval acc 可能 ours > P33**；而 step90 已确认 acc 打平（P33=66.93 ≈ ours FC1=66.69）。要验证就得补 step60 对照。
+
+- **① P33 step60 eval**（checkpoint 在，需 merge）：
+  `MODEL_PATH=Vision-OPD/checkpoints/Vision-OPD-contrast-noanchor-uniform-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301832790/global_step_60`
+  `MODEL_NAME=p33_noanchor_2b_step60`，9-bench，标准 2B env（非 qwen35），判分低并发≤3路。
+  （可选扩展：连 step30 一起评，和 ours FC1 曲线画 anchor-vs-noanchor 的 step-acc 双线。）
+- **② ours FC1 step60 同口径重判**：现有 65.99 是 07-20 判、无 exact-match 降级但疑似 verbose-deflation 压低；
+  `for ds in HRBench4K HRBench8K HallusionBench BLINK MMStar MMBench_DEV_EN VStarBench POPE; do bash scripts/rejudge_one.sh fc1_uniform_unfiltered_step60 "$ds" 3; done`
+- **判读**：两个都同口径后，若 ours step60 明显 > P33 step60 → anchor 有中段 acc 优势（呼应漂移，anchor 依据更硬）；
+  若仍打平 → anchor 价值只在漂移/生成质量（acc 全程打平），维持现有诚实措辞。
+
+## 🟢 [mlx session 07-22 ~04:2x] 本地空闲卡可认领的 eval（mlx public.pool 排队慢，用户指示本地跑）
+
+以下 eval 本地没在跑、且卡在 mlx public.pool 队列，**本地空闲卡可直接跑**（9-bench，输出到 `outputs_vllm_curated`）：
+
+| 任务 | MODEL_PATH（`global_step_90`）/ CKPT | MODEL_NAME | 备注 |
+|---|---|---|---|
+| **QA2** | `checkpoints/Vision-OPD-contrast-uniform-alpha20-Qwen3.5-4B-virl39k-UNFILTERED1img-90step-trial301829143/global_step_90` | `qa2_uniform_alpha20_qwen35_4b_step90` | **0/9 全新**，Qwen3.5-4B → **conda qwen35 + shim**；Qwen3.5-4B α 曲线第三点(配 QA1=α0.5 / P28=α1.0) |
+| S3 补判分 | `checkpoints/Vision-OPD-baseline-seed42-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301829143/global_step_90` | `s3_answerhint_seed42_unfiltered_step90` | 推理已在 NAS，`--reuse` 只补 MathVista_MINI/POPE/HallusionBench 3 个判分；无 shim |
+| QA1 补判分 | `checkpoints/Vision-OPD-contrast-uniform-alpha05-Qwen3.5-4B-virl39k-UNFILTERED1img-90step-trial301829143/global_step_90` | `qa1_uniform_alpha05_qwen35_4b_step90` | 同上补 3 个；Qwen3.5-4B → conda qwen35+shim |
+| P34c 补判分 | `checkpoints/Vision-OPD-contrast-uniform-gaussnoise-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301829143/global_step_90` | `p34c_ctrl_gaussnoise_unfiltered_step90` | 同上补 3 个；无 shim |
+
+**mlx 侧现状**：P34b（degrade）RUNNING 中(mlx 唯一、本地没跑，保留)；冗余 mlx job（P34a/P37b/P37c/N5/N6）已由用户删除。补判分 3 项 mlx 也在排队补，本地/mlx 谁先补上都行（`--reuse` 跨机安全）。⚠️ 主 α 精细曲线(0.75/1.0/1.25/1.5)是 **Qwen3-VL-2B**(P37a/b/c+P26)；QA1/QA2 是另一条 **Qwen3.5-4B** α 三点(0.5/1.0/2.0)，别混。
+
 ## 🔄 [301832756 07-22] P33 no-anchor seed1234 训练进展：step18/90，稳定无崩溃迹象
 
 跑起来后entropy一直稳定在0.4-0.66区间波动，rollout_probs_diff_valid始终=1，没有任何NaN/崩溃/OOM信号。
@@ -12,7 +46,7 @@
 - ✅ **P37b/c（α=1.25/1.5）** 训练完+eval 收尾；P37a(0.75) 两次 OOM 待定
 - 🏃 **N5（base-9B）+ N6（OPSD-9B）** eval 本地跑中（shim→NAS conda，GPU2/3）
 - ⚠️ FA1/FA2 判分已核验**干净**、无需重判
-> **口径提醒**：用户新指示——**以后 eval 打分不做 ZoomBench，只跑 9-bench**。
+> **口径提醒（07-22 用户拍板，本周标准）**：eval 只跑 **paper 的 7 benchmark = BLINK/MMStar/VStarBench/MathVista_MINI/HRBench4K/HRBench8K/HallusionBench**（Hallu 三均）。**去掉 MMBench + POPE + ZoomBench**。`DATASETS=BLINK,MMStar,VStarBench,MathVista_MINI,HRBench4K,HRBench8K,HallusionBench`。（N5/N6 已按 9-bench 起跑，跑完只取这 7 项；新实验严格 7-bench。）
 
 ## 🔴 [devbox 07-22 04:xx] α消融 + 公共基准同口径重判——🔴高优（paper α消融要定稿，用户很急）
 
