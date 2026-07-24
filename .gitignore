@@ -8,28 +8,30 @@ __pycache__/
 *.webp
 *.pdf
 
-checkpoints/
-data/
-external/
-logs/
-outputs/
-rollouts/
-tensorboard_log/
-vlmevalkit_outputs/
+/checkpoints/
+/data/
+/external/
+/logs/
+/outputs/
+/rollouts/
+/tensorboard_log/
+/vlmevalkit_outputs/
 
-wandb/
+/wandb/
+/claude/
+/.claude/
 
 # Local compatibility environments and caches.
 .syspkg_shim/
 .syspkg_shim_nonumpy/
-keepalive_cache/
+/keepalive_cache/
 
 # Generated analysis and evaluation artifacts.
-analysis_outputs/
-eval_summaries/
-eval_yijiangli_run/
-figures/
-judge/
+/analysis_outputs/
+/eval_summaries/
+/eval_yijiangli_run/
+/figures/
+/judge/
 scripts/assets/
 docs/fce_curves_*/
 docs/fce_curve_data_*.csv
@@ -45,7 +47,7 @@ docs/vdh_advantage.html
 
 # Machine-specific MLX submission configs.
 mlx*.yaml
-mlx_noanchor/
+/mlx_noanchor/
 
 # Keep eval source code trackable while excluding datasets and run outputs.
 eval/*_images/
@@ -58,3 +60,7 @@ eval/judge/
 eval/logs/
 eval/model_answer/
 eval/model_answer_official_side/
+eval/MME_RealWorld_CN.json
+eval/hr_bench_*.json
+eval/vstar.json
+eval/zoombench*.json
