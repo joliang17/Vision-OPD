@@ -30,13 +30,7 @@ from torch.distributed.tensor import DTensor
 
 import verl.utils.torch_functional as verl_F
 from verl import DataProto
-from verl.trainer.ppo.core_algos import (
-    agg_loss,
-    compute_opd_token_reward_loss,
-    compute_self_distillation_loss,
-    get_policy_loss_fn,
-    kl_penalty,
-)
+from verl.trainer.ppo.core_algos import agg_loss, compute_self_distillation_loss, get_policy_loss_fn, kl_penalty
 from verl.trainer.ppo.ra_vad import attention_to_image_score, compute_ra_weights, ra_kd_loss
 from verl.utils.attention_utils import index_first_axis, pad_input, rearrange, unpad_input
 from verl.utils.device import get_device_id, get_device_name
@@ -1387,45 +1381,6 @@ class DataParallelPPOActor(BasePPOActor):
                             vopd_metrics["ra_vad/teacher_ctrl_logp_mean"] = (
                                 (teacher_ctrl_log_prob * response_mask).sum() / response_mask.sum().clamp(min=1.0)
                             ).detach().item()
-                        elif self_distillation_cfg.get("opd_token_reward", False):
-                            # thunlp/OPD token_reward_direct (VLM port): detached top-k
-                            # divergence as a 3-D advantage through the PPO clipped loss.
-                            # teacher_topk_logps is already T_on_S -- the teacher forward
-                            # above passes topk_indices=student_topk_indices (only_stu).
-                            if student_topk_logps is None or teacher_topk_logps is None:
-                                raise ValueError(
-                                    "opd_token_reward needs student/teacher top-k log-probs; set "
-                                    "self_distillation.distillation_topk=<K> and full_logit_distillation=True."
-                                )
-                            if self.config.ppo_epochs != 1:
-                                raise ValueError(
-                                    "opd_token_reward currently requires actor.ppo_epochs=1: no 3-D "
-                                    f"old top-k log-probs are cached, got ppo_epochs={self.config.ppo_epochs}."
-                                )
-                            vopd_loss, vopd_metrics = compute_opd_token_reward_loss(
-                                student_topk_log_probs=student_topk_logps,
-                                teacher_topk_log_probs=teacher_topk_logps,
-                                response_mask=response_mask,
-                                # No 3-D old_log_probs are stored in the batch, so the ratio is
-                                # only exact on-policy (ppo_epochs=1), where it is identically 1.
-                                # Guarded below rather than silently using a stale ratio.
-                                old_topk_log_probs=None,
-                                reward_weight_mode=self_distillation_cfg.get(
-                                    "opd_reward_weight_mode", "student_p"
-                                ),
-                                cliprange_low=self.config.clip_ratio_low,
-                                cliprange_high=self.config.clip_ratio_high,
-                                clip_ratio_c=self.config.get("clip_ratio_c", 3.0),
-                                reward_clamp=self_distillation_cfg.get("opd_reward_clamp", 10.0),
-                                teacher_logp_min_clamp=self_distillation_cfg.get(
-                                    "opd_teacher_logp_min_clamp", -10.0
-                                ),
-                                loss_agg_mode=loss_agg_mode,
-                                self_distillation_mask=self_distillation_mask,
-                                batch_num_tokens=self.config.global_batch_info.get("batch_num_tokens"),
-                                global_batch_size=self.config.global_batch_info.get("global_batch_size"),
-                                loss_scale_factor=self.config.global_batch_info.get("loss_scale_factor"),
-                            )
                         else:
                             vopd_loss, vopd_metrics = compute_self_distillation_loss(
                                 student_log_probs=log_prob,

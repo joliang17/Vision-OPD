@@ -109,14 +109,6 @@ class SelfDistillationConfig(BaseConfig):
     save_ema_teacher_checkpoint: bool = False
     teacher_image_key: Optional[str] = None
     teacher_prompt_mode: Optional[str] = None
-    # thunlp/OPD "token_reward_direct" objective (arXiv:2604.13016), VLM port.
-    # When True the teacher/student top-k divergence is detached into a 3-D advantage and
-    # consumed by the PPO clipped policy loss instead of being backpropagated as a KL loss.
-    # Requires full_logit_distillation=True and distillation_topk=<K>.
-    opd_token_reward: bool = False
-    opd_reward_weight_mode: str = "student_p"  # "student_p" | "teacher_p" | "none"
-    opd_reward_clamp: Optional[float] = 10.0
-    opd_teacher_logp_min_clamp: Optional[float] = -10.0
     ra_vad: bool = False
     ra_ctrl_mode: str = "none"
     ra_ctrl_image_key: Optional[str] = None
@@ -337,23 +329,6 @@ class SelfDistillationConfig(BaseConfig):
                 "self_distillation.teacher_image_key is required when teacher_always_on=True "
                 "(unless teacher_prompt_mode='answer_hint')"
             )
-        if self.opd_token_reward:
-            if self.ra_vad:
-                raise ValueError(
-                    "self_distillation.opd_token_reward is a standalone OPD baseline and cannot be "
-                    "combined with ra_vad=True (the contrast target has no meaning as a detached reward)."
-                )
-            if not self.full_logit_distillation or self.distillation_topk is None:
-                raise ValueError(
-                    "self_distillation.opd_token_reward=True requires full_logit_distillation=True "
-                    "and distillation_topk=<K> (thunlp only_stu top-k)."
-                )
-            valid_weight_modes = ["student_p", "teacher_p", "none"]
-            if self.opd_reward_weight_mode not in valid_weight_modes:
-                raise ValueError(
-                    "self_distillation.opd_reward_weight_mode must be one of "
-                    f"{valid_weight_modes}, got {self.opd_reward_weight_mode}"
-                )
         valid_teacher_model_source = ["legacy", "current", "fixed"]
         if self.teacher_model_source not in valid_teacher_model_source:
             raise ValueError(

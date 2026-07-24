@@ -95,22 +95,6 @@ self_distillation:
   # KL interpolation coefficient: 0.0=forward KL, 1.0=reverse KL, in-between=JSD
   alpha: 0.5
 
-  # thunlp/OPD "token_reward_direct" objective (arXiv:2604.13016), VLM port.
-  # True => the teacher/student top-k divergence is DETACHED into a 3-D advantage and
-  # consumed by the PPO clipped policy loss, instead of being backpropagated as a KL
-  # loss. Requires full_logit_distillation=True + distillation_topk=<K>; mutually
-  # exclusive with ra_vad.
-  opd_token_reward: False
-
-  # Weighting of the per-candidate reward inside the top-k: student_p | teacher_p | none
-  opd_reward_weight_mode: student_p
-
-  # Clamp on the per-token reward (open_verl's loss_max_clamp); null disables
-  opd_reward_clamp: 10.0
-
-  # Floor on teacher log-probs before the divergence (open_verl's log_prob_min_clamp)
-  opd_teacher_logp_min_clamp: -10.0
-
   # Loss weight used for SDPO when combined with policy optimization in OPD mode
   gamma: 1.0
 
