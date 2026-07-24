@@ -1,0 +1,128 @@
+<title>Qwen3-VL-4B 评测口径矩阵</title>
+<style>
+:root {
+  --paper: #f8f7f4; --card: #ffffff; --ink: #1c2024; --ink-soft: #5a636b; --ink-faint: #8b939a;
+  --line: #e1e4e6; --accent: #2f5fd9; --teal: #0f7a7c; --win: #b45309; --win-soft: #fdf1e2;
+  --bad: #b0413e; --code-bg: #f0f1ec;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --paper:#15171a; --card:#1c1f23; --ink:#e9eaec; --ink-soft:#a3aab1; --ink-faint:#6d747b;
+    --line:#2a2e33; --accent:#7396ff; --teal:#4fc7c4; --win:#f0a750; --win-soft:rgba(240,167,80,0.12);
+    --bad:#e2726f; --code-bg:#202327; }
+}
+:root[data-theme="dark"] { --paper:#15171a; --card:#1c1f23; --ink:#e9eaec; --ink-soft:#a3aab1; --ink-faint:#6d747b;
+  --line:#2a2e33; --accent:#7396ff; --teal:#4fc7c4; --win:#f0a750; --win-soft:rgba(240,167,80,0.12);
+  --bad:#e2726f; --code-bg:#202327; }
+:root[data-theme="light"] { --paper:#f8f7f4; --card:#ffffff; --ink:#1c2024; --ink-soft:#5a636b; --ink-faint:#8b939a;
+  --line:#e1e4e6; --accent:#2f5fd9; --teal:#0f7a7c; --win:#b45309; --win-soft:#fdf1e2; --bad:#b0413e; --code-bg:#f0f1ec; }
+
+body { background:var(--paper); color:var(--ink); font-family:"PingFang SC","Noto Sans SC",-apple-system,"Segoe UI",sans-serif; font-size:15px; line-height:1.65; margin:0; }
+.wrap { max-width: 1080px; margin: 0 auto; padding: 32px 24px 80px; }
+h1 { font-size: 24px; margin: 0 0 6px; }
+h2 { font-size: 18px; margin: 36px 0 10px; }
+.sub { color: var(--ink-soft); font-size: 13.5px; margin-bottom: 20px; max-width: 46em; }
+.mono { font-family: ui-monospace,"SF Mono",Consolas,monospace; font-size: 0.92em; background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+.table-scroll { overflow-x:auto; border:1px solid var(--line); border-radius:10px; margin: 10px 0; }
+table { border-collapse: collapse; width: 100%; min-width: 860px; font-size: 13.5px; background: var(--card); }
+th, td { padding: 8px 12px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+th:first-child, td:first-child { text-align: left; position: sticky; left: 0; background: var(--card); }
+thead th { font-size: 11.5px; color: var(--ink-faint); background: var(--code-bg); text-transform: none; }
+td.win { color: var(--win); font-weight: 700; }
+td.dim { color: var(--ink-faint); }
+td.official { background: var(--win-soft); }
+.note { font-size: 12.5px; color: var(--ink-faint); margin: 6px 0 0; max-width: none; }
+.verdict { background: var(--card); border: 1px solid var(--line); border-left: 3px solid var(--teal); border-radius: 8px; padding: 14px 18px; margin: 12px 0; font-size: 14px; }
+.verdict.warn { border-left-color: var(--bad); }
+.legend { background: var(--code-bg); border-radius: 10px; padding: 16px 20px; font-size: 13px; color: var(--ink-soft); }
+.legend b { color: var(--ink); }
+</style>
+
+<div class="wrap">
+  <h1>Qwen3-VL-4B 评测口径矩阵</h1>
+  <p class="sub">同一批 checkpoint 在不同评测 pipeline/参数下的分数对照，用于判断"哪个口径可信、跨口径能不能比、以后统一怎么评"。全部数据来自 2026-07-13 ~ 07-16 的实测（trial 301783374 等）。<b>核心结论见页尾。</b></p>
+
+  <h2>口径定义</h2>
+  <div class="legend">
+    <b>P0 官方论文</b>：Vision-OPD 论文报告数字。官方 mm-eval 代码，temp=0.7/top_p=0.8/top_k=20/pp=1.5/max_tokens=8192，AutoProcessor max_pixels=16.7M（不缩图），prompt 为 "&lt;问题&gt; Select from the following choices.\n(A)…"（诱导先推理再作答），judge=Qwen3-30B。<br/>
+    <b>P1 官方代码复刻</b>：同一套官方代码+参数+seed42，唯一差异 judge 换成 Azure GPT（gpt-5.4）。<br/>
+    <b>P2 VLMEvalKit 默认</b>：本仓库主口径。server 模式，temp=0/pp=1.5/max_tokens=4096，MCQ prompt 末尾带"Please select the correct answer…"（诱导直接吐字母），GPT judge。ZoomBench 走 canonical 原生管线（v3-fixed judge）。<br/>
+    <b>P3 VLMEvalKit+官方采样</b>：P2 基础上把采样参数全部对齐官方（temp0.7/pp1.5/8192/16.7M px），prompt 仍是直答风格。<br/>
+    <b>P4 VLMEvalKit+官方prompt</b>：P3 基础上再把 MCQ prompt 换成官方风格（<span class="mono">VLMEVAL_MCQ_OFFICIAL_STYLE=1</span>，2026-07-16 新增开关）。
+  </div>
+
+  <h2>V*Bench</h2>
+  <div class="table-scroll"><table>
+    <thead><tr><th>模型</th><th>P0 官方论文</th><th>P1 官方代码复刻</th><th>P2 VLMEvalKit默认</th><th>P3 +官方采样</th><th>P4 +官方prompt</th></tr></thead>
+    <tbody>
+      <tr><td>baseline (Qwen3-VL-4B)</td><td class="official">81.68</td><td>82.20</td><td>80.63</td><td class="dim">—</td><td class="dim">—</td></tr>
+      <tr><td>VisionOPD (官方ckpt step65)</td><td class="official">84.82</td><td>85.34</td><td>83.25</td><td>83.77</td><td>81.15</td></tr>
+      <tr><td>contrast-保守 (step62)</td><td class="dim">—</td><td>84.82</td><td>84.29</td><td class="dim">—</td><td class="dim">—</td></tr>
+      <tr><td>contrast-标准 (step62)</td><td class="dim">—</td><td>83.77</td><td>83.25</td><td class="dim">—</td><td class="dim">—</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">各口径基本一致（±2pp内，n=191 的采样方差就有 ±2.8pp）——V*Bench 对口径不敏感，跨口径可以粗略比较。</p>
+
+  <h2>HRBench4K</h2>
+  <div class="table-scroll"><table>
+    <thead><tr><th>模型</th><th>P0 官方论文</th><th>P1 官方代码复刻</th><th>P2 VLMEvalKit默认</th><th>P3 +官方采样</th><th>P4 +官方prompt</th></tr></thead>
+    <tbody>
+      <tr><td>baseline</td><td class="official">78.50</td><td>78.50</td><td>79.88</td><td class="dim">—</td><td class="dim">—</td></tr>
+      <tr><td>VisionOPD</td><td class="official">81.50</td><td>81.25</td><td>76.50</td><td>76.25</td><td>79.88</td></tr>
+      <tr><td>contrast-保守</td><td class="dim">—</td><td>79.38</td><td>80.75</td><td class="dim">—</td><td class="dim">—</td></tr>
+      <tr><td>contrast-标准</td><td class="dim">—</td><td>81.12</td><td>79.88</td><td class="dim">—</td><td class="dim">—</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note"><b>口径敏感的重灾区</b>：VisionOPD 在 P2 掉 5pp（76.5 vs 81.5），根因是 prompt 风格——P2 的直答指令让模型裸吐字母，P0/P1 的官方 prompt 诱导带内容作答。P4（改 prompt）收回大部分差距（79.88）。注意 baseline/contrast 反而在 P2 下不吃亏甚至更高——<b>prompt 风格的影响是模型相关的</b>（VisionOPD 的 bbox-crop 训练可能让它更依赖"说出内容"的作答方式），这正是跨口径比较危险的原因。</p>
+
+  <h2>HRBench8K</h2>
+  <div class="table-scroll"><table>
+    <thead><tr><th>模型</th><th>P0 官方论文</th><th>P1 官方代码复刻</th><th>P2 VLMEvalKit默认</th><th>P3 +官方采样</th><th>P4 +官方prompt</th></tr></thead>
+    <tbody>
+      <tr><td>baseline</td><td class="official">76.25</td><td>74.25</td><td>73.75</td><td class="dim">—</td><td class="dim">—</td></tr>
+      <tr><td>VisionOPD</td><td class="official">77.00</td><td>77.50</td><td>75.25</td><td>73.88</td><td>76.25</td></tr>
+      <tr><td>contrast-保守</td><td class="dim">—</td><td>77.62</td><td>77.25</td><td class="dim">—</td><td class="dim">—</td></tr>
+      <tr><td>contrast-标准</td><td class="dim">—</td><td>77.00</td><td>78.00</td><td class="dim">—</td><td class="dim">—</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">模式同 HRBench4K 但幅度小一半。另注意：P2 的 HRBench 系列曾发现零星 vLLM 请求失败污染（"Failed to obtain answer via API."，见 <span class="mono">docs/eval_integrity_registry.md</span>），表中 P2 数字为修复重跑后的干净值。</p>
+
+  <h2>ZoomBench</h2>
+  <div class="table-scroll"><table>
+    <thead><tr><th>模型</th><th>P0 官方论文<br/>(Qwen3-30B judge)</th><th>P1 官方代码复刻<br/>(Azure GPT judge)</th><th>P2 canonical原生管线<br/>(temp0, v3-fixed GPT judge)</th><th>官方pipeline历史跑<br/>(thinking,temp0.7)</th></tr></thead>
+    <tbody>
+      <tr><td>baseline</td><td class="official">44.97</td><td>39.88</td><td>44.14</td><td>41.07</td></tr>
+      <tr><td>VisionOPD</td><td class="official">53.49</td><td>48.52</td><td>52.90</td><td>48.76</td></tr>
+      <tr><td>contrast-保守</td><td class="dim">—</td><td>42.01</td><td>43.79</td><td class="dim">—</td></tr>
+      <tr><td>contrast-标准</td><td class="dim">—</td><td>43.08</td><td>44.62</td><td class="dim">—</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note"><b>judge 是 ZoomBench 的主导变量</b>：P1 相对 P0 整体低 ~5pp（base -5.09 / VOPD -4.97，一致偏移=judge 差异，模型间相对差距完好）。我们的 canonical 管线（v3-fixed judge）反而和 P0 最接近（44.14 vs 44.97、52.90 vs 53.49）。<b>结论：ZoomBench 绝对分只能同 judge 内比较；模型排序（VOPD ≫ contrast &gt; base）在所有 judge 下稳定。</b></p>
+
+  <h2>MME-RealWorld / MME-RealWorld-CN</h2>
+  <div class="table-scroll"><table>
+    <thead><tr><th>模型</th><th>P0 官方论文 (EN)</th><th>P1 复刻 (EN)</th><th>P0 官方论文 (CN)</th><th>P1 复刻 (CN)</th></tr></thead>
+    <tbody>
+      <tr><td>baseline</td><td class="official">63.27</td><td>62.78</td><td class="official">62.92</td><td class="dim">待跑(mlx C2)</td></tr>
+      <tr><td>VisionOPD</td><td class="official">68.02</td><td>67.78</td><td class="official">68.89</td><td>66.93</td></tr>
+      <tr><td>contrast-保守</td><td class="dim">—</td><td>64.69</td><td class="dim">—</td><td>64.12</td></tr>
+      <tr><td>contrast-标准</td><td class="dim">—</td><td>65.79</td><td class="dim">—</td><td>64.31</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">EN 侧复刻与官方完全对齐（baseline 62.78 vs 63.27、VOPD 67.78 vs 68.02，均 ±0.5pp）。CN 侧 VOPD 66.93 比官方 68.89 低 ~2pp（temp0.7 单 seed 噪声 + 判分差异量级内）。contrast 两模型 EN/CN 都位于 base 与 VOPD 之间且排序一致（标准 &gt; 保守：EN 65.79/64.69，CN 64.31/64.12），与 V*/HRBench 上的结论互洽。baseline CN 推理产物缺失，已交 mlx（C2）重跑。</p>
+
+  <h2>结论：哪个可信、以后怎么评</h2>
+  <div class="verdict">
+    <b>1. 官方数字是真实的。</b>官方代码+官方 checkpoint 完整复现（V*/HRBench ±0.5pp，其中 base HRBench4K 一位不差），没有灌水。
+  </div>
+  <div class="verdict">
+    <b>2. 分差三大来源已全部定位</b>：<b>prompt 风格</b>（直答 vs 带内容作答，HRBench 上最大 ~5pp、且影响大小与模型相关）＞ <b>judge 模型</b>（ZoomBench 上 ~5pp 一致偏移）＞ 采样参数（~1pp）。图像分辨率处理曾被怀疑、已排除（checkpoint 默认就是 16.7M 上限，两条管线图像保真度等价）。
+  </div>
+  <div class="verdict">
+    <b>3. 以后怎么评（建议）</b>：(a) <b>组内比较</b>（自己的模型互相比、比 base）：继续用 P2（VLMEvalKit 默认，temp0 可复现、历史数字全在这个口径）；(b) <b>和官方论文数字对表</b>：用 P1（官方代码）或 P4（VLMEvalKit + <span class="mono">VLMEVAL_MCQ_OFFICIAL_STYLE=1</span> + 官方采样），ZoomBench 例外——用我们的 canonical 管线（它和 P0 最接近）；(c) 论文里引用任何跨口径数字必须标注 pipeline/prompt/judge 三要素。
+  </div>
+  <div class="verdict warn">
+    <b>4. 不要做的事</b>：把 P2 的 HRBench 数字和官方论文表并排比较（会把 VisionOPD 系的方法系统性低估 ~5pp）；在 temp0.7 无 seed 下跑小样本 benchmark（V*Bench n=191 单次方差 ±2.8pp）；引用 HRBench 数字前不查 <span class="mono">eval_integrity_registry.md</span>（API 失败污染史）。
+  </div>
+
+  <p class="note" style="margin-top:28px;">数据来源：logs/repro_results_summary.log（官方复刻）、docs/reports/ra_vad_contrast_report.html（P2 主口径）、officialcfg/officialprompt 系列日志（P3/P4）。维护：结果更新后重新发布本页。</p>
+</div>

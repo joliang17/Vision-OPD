@@ -1,0 +1,3 @@
+#!/bin/bash
+# shim: 用 conda qwen35 环境的 vllm(0.18, 支持Qwen3.5架构) serve, 其余命令走系统python
+exec /mnt/bn/tns-algo-video-vlm-ruby/yijunliang/miniconda3/envs/qwen35/bin/vllm "$@"

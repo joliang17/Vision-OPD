@@ -553,3 +553,98 @@ step120/150（崩溃边界扫描 + 可能的免费提升）；③ WeMath verbosi
 - ❌ "解决了 zoom/search"——2B 上略超 base，4B 上远低于 VisionOPD/GRPO。
 
 （Codex 版 `paper_notes_codex.md` 末尾另有一份七段式论文结构建议，可作动笔时的骨架参照，此处不重复。）
+
+## 13. nothink vs thinking base 对照（Qwen3.5 系，2026-07-22 用户提供，暂存备用）
+
+主表 base 用 **thinking** 口径（base 开 thinking）。以下是关掉 thinking 的 base（nothink）对照：
+
+| 底座 | nothink base | thinking base（主表） | thinking 溢价 |
+|---|--:|--:|--:|
+| Qwen3.5-2B | 68.61 | 68.59 | ≈0（−0.02） |
+| Qwen3.5-4B | 73.94 | 76.45 | +2.51 |
+| Qwen3.5-9B | 74.97 | 78.68 | +3.71 |
+
+**观察：thinking 溢价随 scale 增大**（2B≈0 / 4B +2.51 / 9B +3.71）——大模型 thinking 更有用、小模型几乎无差。**用途（可能，用户"之后可能用"）**：① no-think 公平对照（ours 训后天然 no-think，若 base 也报 no-think 对照更公平，类似 Qwen3-VL 的 no-think 对照叙事）；② thinking-scale 讨论点。**注意口径**：这三个 nothink 值需确认是否与主表同 suite（7-bench Average HR + Hallu 三均）；引用前核对。
+
+## 12. 新 suite 消融整体 Acc（2026-07-22）
+
+> ⚠️ **本节部分 HR 值是 cycle0 口径（devbox 早期误用），已作废。paper 一律以
+> `paper_handoff_values_20260722.md`（301967423 出具，HRBench Average 口径、经核验）为准。**
+> 口径三处：HR=`cycle=Average×type=all`；Hallu=aAcc/fAcc/qAcc 三均；α=1.0 全文统一 66.66。
+
+口径：7-bench = BLINK/MMStar/V*/MathVista/HR4K/HR8K/Hallu三均；VLMEvalKit vllm_server，temp0/pp1.5/4096，judge gpt-5.4-mini。base(未训练)=62.27，ours(2B P26)=66.64。**paper 里 α/β 表按用户要求只报整体 Acc（不逐项）。**
+
+### α 消融（对比强度，2B×unfiltered step90，uniform）
+| α | Acc | 状态 |
+|---|--:|---|
+| 0 (matched, tilt 关) | 64.31 | ✅ 重判干净 |
+| 0.5 (FA1) | 63.56 | ✅ 07-22 重判（仍略低于 α=0，疑单 seed 训练波动） |
+| 0.75 (P37a) | — | 只 step10 未训完，待重训 |
+| 1.0 (ours) | 66.64 | 主表 |
+| 1.25 (P37b) | 67.04 | ✅ 07-22 判完 |
+| 1.5 (P37c) | 66.14 | ✅ 07-22 判完 |
+| 2.0 (FA2) | 64.32 | ✅ 07-22 重判干净（掉回≈α=0，单峰确认） |
+对比 tilt 净贡献 = ours − α=0 = **+2.33pp**（matched baseline，隔离 reweight/自蒸馏）。α=0.5=63.05<α=0 的非单调是 FA1/FA2 被 verbose-deflation 压低的假象，待重判后填。
+
+### β 消融（plausibility support 阈值，2B×unfiltered step90，uniform）
+| β | Acc | 状态 |
+|---|--:|---|
+| 0 (无 support 限制, FA3) | 65.14 | 07-20 判，无降级字样 |
+| 0.1 (ours, main) | 66.64 | 主表 |
+β support 净贡献 = **+1.50pp**（逐项 6/7 正：BLINK+0.90/MMStar+0.27/V*+1.05/MathVista+1.80/HR4K−0.12/HR8K+1.62/Hallu**+4.96**）。gap 主要在 Hallu，比 anchor 明确。FA3/ours 待同口径重判定稿，方向稳。
+
+**β=0 长训练崩溃（旧口径 Table2，2026-07-22 核实 step200 无 judge 降级字样=真崩，非坏 judge）**：β=0 单调崩溃 step90 **69.11**（Table2 现用 68.90）→ step150 **60.06**（Table2 用 59.52）→ step200 **57.72**（逐项 BLINK 43.4/MMStar 46.2/MMBench 59.3/MathVista 40.2 全崩，HR4K 73/HR8K 75.5 保留）；β=0.1 全程 70.68/71.05/70.36/70.99 平稳。→ 强证据：unconstrained support 下 recursive target distortion 逐步累积。**Table2 的 step200 pending 格可填 57.72**（step90/150 保持现有）。**step180 checkpoint 已被 prune**（ext200 dir 只剩 step30/60/90/110，无 180/200 的 ckpt；step200 的 eval 数据是崩溃前跑好的、仍在），**无法补 eval** → Table2 的 β=0 行改用 **step90/150/200 三点**展示崩溃即可，step180 列删除或留空。
+
+### anchor 消融（no-anchor P33 vs ours，同口径重判 07-22）
+| benchmark | no-anchor (P33) | with-anchor (ours) | Δ |
+|---|--:|--:|--:|
+| HRBench4K | 76.38 | 76.25 | −0.13 |
+| HRBench8K | 73.12 | 73.75 | +0.63 |
+| Hallu三均 | 53.43 | 54.86 | +1.43 |
+anchor 的 acc 净贡献在噪声带内(±2)。**语言漂移(rollout 含 CJK 比例，机制证据)**：P33(no-anchor) step50/70/90 = 14.1/16.4/26.6%；ours(anchor) = 6.2/8.6/21.9% —— anchor 减缓漂移（中段约减半）。多 seed anchor training 进行中（补 acc 证据）。**措辞红线**：不写"anchor 进一步提升/必要"强 claim（acc 打平）；可写"减缓语言漂移"机制 + 定位为"可选精修/继承性组件"。
+
+**anchor 中段 acc 假设已否定（07-22 同口径 step60 对照）**：P33(no-anchor) step60 = **67.22** vs ours(anchor) FC1 step60 = **66.39**（旧压低 65.99）——no-anchor 中段 acc 甚至略高;step90 也是 P33 略高（66.93 vs 66.69）。→ **anchor 在 acc 上全程打平（甚至 no-anchor 略高），价值纯在减少语言漂移**，坐实 5.9 现有叙事，不必改。
+
+### control-image 消融（2B×unfiltered step90，uniform；对比 full-image vs 退化图像）
+| control | Acc | 状态 |
+|---|--:|---|
+| black (ours) | 66.64 | ✅ 主表 |
+| no-image (P34a) | 66.49 | ✅ 07-22（逐项 BLINK57.23/MMStar62.93/V*74.87/Math63.10/HR4K75.50/HR8K75.50/Hallu56.31）⚠️ **len4096**（black/其他 ctrl 是 len6144，口径差） |
+| Gaussian blur / degrade (P34b) | — | 待 eval（机器停，重提） |
+| Gaussian noise (P34c) | — | 待 eval（机器停，重提） |
+观察：no-image(66.49) ≈ black(66.64)，差异在噪声带内 → control 具体构造对 acc 不敏感（但 len 口径差待对齐）。degrade/gauss 待补。
+
+**语言漂移 table（进 paper，用户 07-22 要作 anchor 依据）**：rollout 含 CJK 比例（每 step 256 样本）：
+
+| step | P33 (no-anchor) | ours (anchor) |
+|---|--:|--:|
+| 10 | 7.8% | 7.0% |
+| 30 | 12.5% | 11.7% |
+| 50 | 14.1% | 6.2% |
+| 70 | 16.4% | 8.6% |
+| 90 | 26.6% | 21.9% |
+
+定性例子（P33 step90 rollout output，**paper 里禁中文 verbatim，只能英文描述**）：(a) 整段推理漂成中文（math 题解全中文）；(b) 词级 code-switching（英文推导里混入中文字符，如把 "已知this cosine是 4/5" 这种中英混在一句）。**诚实措辞**：写 "anchor substantially reduces language drift (roughly halved mid-training) and improves generation quality, even though the aggregate accuracy is comparable"，**不写** "collapses without anchor"（ours step90 也 21.9%）。用途 = anchor 的生成语言稳定性依据（acc 打平但漂移明显更少）。
+
+## 14. Divergence 方向消融（forward / JSD / reverse KL，新口径，2026-07-23）
+
+配置：Qwen3-VL-2B × virl39k-filtered × contrast-standard × 90 步，`ra_divergence_alpha`={0.0 forward / 0.5 JSD / 1.0 reverse}。**全部新 7-bench 口径**（HR Average + Hallu 三均，去 MMBench/POPE/Zoom），与主表一致——三方逐 benchmark 从各自 eval 目录重算：
+
+| divergence | BLINK | MMStar | V* | MathVista | HR4K | HR8K | Hallu | 7-Acc |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|
+| forward KL (α=0, ours) | 58.18 | 63.87 | 78.01 | 67.00 | 76.38 | 73.12 | 52.93 | **67.07** |
+| JSD (α=0.5) | 57.08 | 62.33 | 76.44 | 65.70 | 75.37 | 73.00 | 53.86 | **66.25** |
+| reverse KL (α=1) | 56.92 | 61.07 | 76.44 | 64.00 | 73.62 | 70.50 | 50.86 | **64.77** |
+
+**结论**：forward(ours) 67.07 > JSD 66.25 > reverse 64.77。forward KL（mode-covering，target 在前 KL(target‖student)）最佳；reverse KL（mode-seeking，多数蒸馏工作的默认方向）最差；JSD（generalized α=0.5）居中。→ 支持 forward KL 作默认。forward 67.07 ≈ 主表 ours 67.04（standard≈uniform，w_t 打平）。
+
+来源目录：forward=`outputs_api_server/contrast_standard_virl39k_90step_server_eval`；reverse=`outputs_vllm_curated/contrast_reversekl_2b_virl39k_step90`；JSD=`outputs_api_server/jsd_2b_virl39k_90step_step90_eval`。`ra_divergence_alpha` 是 loss 选择器（0/0.5/1 硬切换 forward/JSD/reverse），与 `ra_contrast_alpha`（对比锐化强度）是无关的两个参数。（旧口径同实验为 forward 70.68/JSD 69.74/reverse 68.31，趋势一致；JSD 首评曾被 judge 429 污染成"暴跌"，已重判平反。）
+
+## 15. VDH — 视觉依赖 token 可视化（paper 素材，2026-07-23）
+
+定义：per-token $\Delta_t=\log p(y_t\mid\text{img})-\log p(y_t\mid\text{black})$，越大=该 token 越依赖看真图。对同一段 response（ours 的真实 rollout）用三个 teacher（base/OPSD/ours）各算一遍。脚本：`scripts/visual_dependency_highlight.py`（GPU 算 Δ，批量走 `docs/vdh_manifest.jsonl`）+ `scripts/render_vdh.py`。数据：`docs/vdh_out/*.json`（13 样本，Qwen3-VL-2B，base=vanilla_nothink / opsd=answerhint_qwen35_unfiltered / ours=cons_qwen35_seedA 的对应 checkpoint）。
+
+- **用户选中 case：`MMStar_282`**（2026-07-23）。
+- **advantage = ours − max(base,opsd)**（ours 比两个 baseline 都强调更多的 token）排序（visual token 平均）：MathVista_821 +0.56 / 233 +0.38 / MMStar_316 +0.35 / VStar_25 +0.22 / **MMStar_282 +0.20** / VStar_136 +0.13。反例（advantage≤0，靠世界知识非看图）：MathVista_29/745（名人年龄题）、MMStar_309。
+- 展示形式历史：① matplotlib token 底色高亮（有 overlap，弃）② 折线 ③ 柱状聚合（visual vs non-visual token μΔ：ours 0.79 vs base 0.62 vs opsd 0.65；非视觉 token 三方≈0.09——ours 特异增强视觉 token；**用户否，要 token-level**）④ **HTML token 高亮**（`docs/vdh_*.html`，`white-space:pre-wrap` 天然不 overlap，用户认可这个方向）⑤ advantage 绿色行（ours−max(base,opsd)）。
+- 待定：最终进 paper 的样本 + 转 PDF（LaTeX 吃不了 HTML）。措辞红线：单样本只能 "illustrative/consistent with"，量化证据在柱状聚合。

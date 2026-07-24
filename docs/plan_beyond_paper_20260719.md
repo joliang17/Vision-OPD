@@ -36,6 +36,27 @@
 G1 赢 → 补 G1b 严格对照 + 双 seed → 若稳，即得"1/5 蒸馏预算 + 1ep GRPO > 纯 GRPO"的 practical recipe（可作后续 paper 核心）。
 G1 平/输 → G2；两者都无益 → 序贯路线关闭，G3 联合 loss 是唯一出路（成本高，先小 λ 扫描）。
 
+### G1 结果（2026-07-20/21，301832790）—— ✅ 9-bench 全出，判定完成
+- **训练完成**：194/194 步（1ep，8:39:49），末步 critic/score/mean=0.523，已 merge global_step_194。
+- **完整 9-bench（temp0/4096，GPT judge）**：
+
+| | BLINK | MMStar | MMBench | V* | MathVista | HR4K | HR8K | POPE | Hallu(a/f/q三均) | **Zoom** |
+|---|---|---|---|---|---|---|---|---|---|---|
+| **G1**（ours→GRPO 序贯） | 57.23 | 62.33 | 75.69 | 78.01 | 67.40 | 78.50 | 75.62 | 87.71 | 55.59 | **44.97** |
+
+- **旧口径 7-bench（含 MMBench）= 70.68** —— 与主表 ours-uniform(70.68) **完全持平**。
+- 新口径 7-bench（Hallu 三均替 MMBench、去 POPE）= 67.81。
+- **ZoomBench 44.97** ✅：纯 GRPO×virl39k 38.34（全表最低）、ours-uniform 41.9–43.6 → 序贯后 **全表最高，+6.6pp vs 纯GRPO**。
+- **✅ 判定（按决定树）**：composite 70.68 ≤ GRPO-from-base 71.66（filtered 参考线，−0.98pp 噪声带内，**未净增**）
+  但 **Zoom 回血支线明确成立（44.97 ≫ 41）** → 落"合体有益（Zoom 维）"。**composite 未提升、收益集中在 Zoom**
+  是关键限定——不是"1/5 预算 + 1ep > 纯 GRPO"的全面胜利，而是"序贯合体把 ours 的 Zoom 长处叠加到 GRPO 上、
+  且不掉 composite"。
+- **⚠️ 口径限定**：71.66 是 **filtered** GRPO-from-base，G1 是 **unfiltered** → composite 对照不严格。
+  **下一步 = G1b（GRPO-from-base × unfiltered 1ep 严格对照）**：只有 G1b 出来才能确认 G1 的 composite 持平/Zoom 回血
+  是"合体贡献"而非"unfiltered 数据本身的效应"。G1b 是 8 卡 GRPO ~5h，排在本机 α=0→P33 链之后（或交空闲姊妹机）。
+- **决定树落点**：G1 赢（Zoom 支线）→ 待 G1b 严格对照 + 双 seed 定稿；若 G1b 也显示 Zoom 回血来自合体而非数据，
+  即得"序贯蒸馏打磨 GRPO 的 Zoom 短板"的 practical recipe。
+
 ---
 
 ## 方向二：black × qtext 双 ctrl（Q 系）
@@ -61,6 +82,30 @@ Q0 的 ensemble 真实增益是闸门：小 → 整个方向降级为 paper 的 
 Q2 是正式方法（若成，即"multi-ctrl contrastive distillation"，可作后续 paper 的第二核心）。
 
 ---
+
+## 附：α=0 matched baseline + P33 no-anchor 结果（2026-07-21，主 paper 消融，非 beyond-paper，但记此备查）
+
+> ⚠️ 这两个 eval 首跑撞 judge-API→exact-match 污染（**VStar/HRBench 也走 judge，只 POPE 纯规则**），
+> 已全部删缓存重判，下表是**从 judge log RESULT_JSON 提取的干净值**（勿读 `*_acc.csv`，可能是旧污染值）。
+
+| bench | base | **α=0** | **P33(no-anchor)** | ours(α=1) |
+|---|---|---|---|---|
+| BLINK | 53.02 | 55.29 | 58.71 | 59.92 |
+| MMStar | 57.47 | 59.33 | 62.93 | 64.07 |
+| MMBench | 78.09 | 76.03 | 78.09 | 79.81 |
+| VStar | 72.77 | 74.35 | 75.92 | 76.44 |
+| MathVista | 62.50 | 64.50 | 67.0 | 67.30 |
+| HR4K | 71.13 | **62.62** | 72.0 | 77.25 |
+| HR8K | 67.38 | **57.38** | 67.75 | 72.25 |
+| Hallu三均 | 51.60 | **29.35** | 38.97 | 54.39 |
+| **7-bench均** | 66.05 | **64.21** | 68.91 | **70.68** |
+| Zoom | 42.49 | 39.17 | 43.31 | 43.55 |
+
+**结论**：① **α=0（去对比锐化、纯自蒸馏）= 64.21 < base 66.05**——纯 T=2软化+forward-KL 是"模糊化"，
+无对比锐化补偿则**主动伤害**（HR/Hallu 暴跌，预测经核验连贯、非模型损坏，是感知一致性真实退化）。
+**ours−α=0 = +6.47pp = 对比锐化的真实净贡献，且承重**（matched baseline 完美隔离，排除 reweight/自蒸馏功劳）。
+② **P33（去 anchor，纯 softmax(lp_hi−lp_ctrl)）= 68.91**，介于两者间，去 anchor 仅 −1.77——纯对比比值已回收
+大部分收益，anchor 是温和精修。**待回填主表/ledger 消融区（α 曲线 + guarded-tilting 邻近）+ paper_notes §3**。
 
 ## 资源与推进
 - 本机（301832790，8卡）：今晚 G1；明天按决定树推进（G1b/G2/Q1 各 ~2-5h）。Q0 用 G1 期间的空隙 1 卡。

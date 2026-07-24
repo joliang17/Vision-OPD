@@ -1,10 +1,95 @@
 # 排队实验 — 2026-07-13
 
+## 🔴 [301967423 07-22 20:xx] FCE step10 判分污染更正 + β=0 step100（用户下达）
+
+**① FCE step10 曲线起点是判分污染，非真实**（用户 07-22 抓出，已重判修正）：
+fc1/fc4 的 **step10 的 BLINK/MMStar/HR4K/VStarBench 判分日志全部有 exact-match 回退警告**（step20 起干净）。
+污染值 fc1=58.89 / fc4=57.78（BLINK 41/42、MMStar 49/50 假暴跌，V*/MathVista 未崩=规则可解）。
+**删缓存 + 规则优先-GPT 重判后（6-bench）：fc1 step10 = 68.61（+9.72）/ fc4 step10 = 66.64（+8.86）**。
+→ **曲线起点其实高于 base（64.05），是平滑上升，不是"掉到 base 以下再猛回升"的 V 形**。旧 FCE 曲线的 step10 点作废。
+⚠️ 只重判了 step10（用户说其它 step 看着没事、先不动）；如后续发现别的早期点异常再逐点查 exact-match 标记。
+FCE 那批 20 点缺 HallusionBench：其中 **FC1 的 6 点已补 Hallu 判分**（07-22），FC4 全部 + FC1 的 100/110/130/140 共 14 点**连 Hallu 推理都没有**，补齐需 GPU 重推（未做，待定）。
+
+**② β=0 step100（Table2 崩溃曲线补点）**：从 ext200 的 step90 resume 续训到 100（4卡，world_size_4），
+`Vision-OPD-contrast-beta0-Qwen3-VL-2B-virl39k-ext100-trial301967423/global_step_100` 已 merge。
+eval 7-bench 进行中（GPU0），出数填 Table2 的 90(68.90)→**100(?)**→150(59.52) 使崩溃曲线连续。
+
+**③ uniform β=0 长训练（90→200，替换 standard β=0）** + **no-anchor 跨 scale（Qwen3.5-2B 本地 + 4底座 mlx teen/pub 赛马）** 已排/已提交，见对应 driver / mlx job。
+
+
+
+## 🏋️ [devbox 07-22] no-anchor ours 跨 scale（anchor 消融的其他底座验证，2B 已有跳过，用户要）
+
+**目的**：验证"anchor 可删/acc 打平"跨 scale 成立。2B 已证（P33 no-anchor=66.78 ≈ ours 67.04，+0.26 噪声带内），补其他底座 → anchor 消融从单点变成跨 scale 结论。
+
+**配置**：各底座**终局配置 + 去 anchor**：`uniform×unfiltered×α=1.0×β=0.1` **且 `ra_contrast_anchor_coef=0`**（target 退化为纯对比比值 softmax(log p_hi − log p_ctrl)，无 lp_hi anchor），90 步。参照现成脚本 `experiment_script/run_p33_pure_contrast_noanchor_2b.sh`，只改底座 MODEL_PATH + 对应 len。
+
+**待跑底座（2B=P33 已有，跳过）**：
+| 底座 | 备注 |
+|---|---|
+| Qwen3-VL-4B | len4096（4B 定稿口径）；对照 4B ours 73.16 |
+| Qwen3-VL-8B | len4096起，8卡；对照 8B ours 76.26 |
+| Qwen3.5-2B | conda qwen35 + shim；对照 Q35-2B ours 71.51 |
+| Qwen3.5-4B | conda qwen35；对照 Q35-4B ours 76.77 |
+| Qwen3.5-9B | conda qwen35，8卡；对照 Q35-9B ours 79.24 |
+
+**每个**：训练（GPU，90步）→ merge → eval 7-bench（**Average 口径**：HR cycle=Average、Hallu 三均）→ 填「no-anchor vs ours」跨 scale 对照（进 §5.9 anchor 表或附录）。
+**预期**：各 scale no-anchor ≈ ours（acc 打平），强化"anchor 价值在减语言漂移、不在 acc"。⚠️ Qwen3.5 系走 conda qwen35 env；各底座 checkpoint prune 注意（长 eval 前拷贝 aside）。
+
+## 🏋️ [devbox 07-22] β two-arm × UNIFORM 到 200 步（补充，两臂统一终局 uniform + 都到 step200，4卡GPU，用户要）
+
+**背景**：Table2 的 β 消融当前**两臂既配方不一致、step 也不对齐**：β=0.1 用 ours **uniform**（FC1，无 w_t，**只到 step150**）、β=0 用 **standard**（beta0，有 w_t，到 200）。**要修两件**：(1) β=0 也做 uniform 版；(2) β=0.1 uniform 从 step150 续到 200。修完两臂都是 uniform、都到 step200，去掉 provisional 标注。
+
+**② 补 β=0.1 uniform 到 200**：从 FC1 的 `...contrast-uniform...150step-keepall-trial301783374/global_step_150` resume（keepall，step150 含 optimizer），保持 uniform + β=0.1，续训到 200 步（再 +50 步）；merge step160-200 → eval（Average 口径）→ 填 β=0.1 的 step200。
+
+**方法**：从 **uniform 主配方 step90** resume，设 **β=0**，续训到 200 步（对齐 β=0.1 FC1 的 step 范围，或到 150 亦可）。
+- 基线 checkpoint：`checkpoints/Vision-OPD-contrast-uniform-Qwen3-VL-2B-virl39k-UNFILTERED1img-150step-keepall-trial301783374/global_step_90`（FC1 的 uniform step90；含 optimizer shards）
+- 关键参数：`ra_uniform_weight=True`（uniform，无 w_t）+ **β=0**（plausibility support 阈值设 0，参考 `run_p31_beta0_extend200` 的 β=0 设法但把 weight 从 standard 改成 uniform）+ len6144 + 4卡续（world_size_4）。
+- ⚠️ 独立 EXPERIMENT_NAME（如 `...-uniform-beta0-...-ext200`），save_freq=10 存 step100/150/200。
+- 训完 merge step150/200（或全档）→ eval 7-bench（**Average 口径**：HR cycle=Average、Hallu 三均）→ 替换 Table2/β图里 standard 的 β=0（65.71/56.45/52.99），使两臂都是 uniform。
+
+**用途**：β 消融严格化（两臂同为终局 uniform 配方），去掉"β=0 on standard variant"的 provisional 标注。崩溃趋势预计不变（β=0 无论 weight 都会 recursive 崩），只是数值口径对齐。
+
+## 🏋️ [devbox 07-22] β=0 续训 step100（Table2 崩溃曲线补中间点，用户要整数100，4卡GPU）
+
+**目的**：Table2 的 β=0 现有 90(68.90)/150(59.52)/200(57.72)，90→150 一下跳 −9.4 太突兀，补 **step100** 让崩溃曲线连续。step100 checkpoint 已被 prune（ext200 dir 只剩 30/60/90/110），需**续训重生成**。
+
+**方法**：从 β=0 step90 resume 续训 10 步到 100。
+- 基于 `experiment_script/run_p31_beta0_extend200_301761390.sh`，**把 `trainer.total_training_steps=200` 改成 `100`**。
+- resume 源：`checkpoints/Vision-OPD-contrast-beta0-Qwen3-VL-2B-virl39k-90step-trial301761390-ext200/global_step_90`（`actor/` 里有 `model_world_size_4_rank_*.pt` + `extra_state_*`，含 optimizer，可 resume）；或脚本原用的 `trial301783374` step90（latest=90）。
+- ⚠️ **必须 4 卡续**（分片 world_size_4）。
+- ⚠️ **换独立 EXPERIMENT_NAME / output dir（如 `-ext100`）**，别直接用 ext200 dir——它 `latest_checkpointed_iteration.txt=110`，verl 会从 110 续而不是 90。save_freq 保证存 `global_step_100`。
+
+**训完**：merge `global_step_100` → eval 7-bench（**Average 口径**：HR `cycle=Average×type=all`、Hallu 三均）→ 填 Table2 的 β=0 step100 一格。
+
+**caveat**：resume 训出的 step100 不保证 bit-exact 复现原 run（数据顺序随机性），但崩溃趋势对，够用；若与 90/150 明显不在单调线上再复核。
+
+**附：step110 eval（现成，直接排，用户 07-22 要）**：`checkpoints/Vision-OPD-contrast-beta0-Qwen3-VL-2B-virl39k-90step-trial301761390-ext200/global_step_110` **已 merge**（有 model.safetensors），**不用训、直接 eval** 7-bench（**Average 口径**：HR `cycle=Average×type=all`、Hallu 三均）。用途：① step100 续训的现成备份点；② 让 β=0 崩溃曲线多一个点（90/100/110/150/200）。走 mlx 或本地空闲卡即可。
+
+## ✅ [301832756 07-22 09:0x] FCE批次(120组合=20点×6数据集)全部完成，0失败/0再次退化 — FCE 30点曲线全部干净
+
+接上面"FCE批次已恢复"条：`rejudge_batch_lowconc_resume.log` 剩余52个 07-22 09:07:31 UTC 全部跑完，
+0 FAIL/0 ERROR。加上之前已完成的68个，20个缺口点(10/20/40/50/70/80/100/110/130/140，FC1+FC4各10档)
+×6数据集(BLINK/MMStar/VStarBench/MathVista_MINI/HRBench4K/HRBench8K，本批**不含HallusionBench**——
+按本周7-bench规范HallusionBench本应在内，但这批只跑了FCE自己的旧7-bench-fast-group规范，缺Hallu，
+这就是"20点×6"而非×7的由来；MMBench_DEV_EN数据也在但本周规范已弃用不进主表)全部6/6真实judge数据。
+加上从没踩过坑的老10点(step30/60/90/120/150 × FC1/FC4，9-bench更全，含Hallu)，**FCE 30点曲线现在
+全部是干净数据**，之前那版07-21曲线(SOCKS代理exact-match降级污染)已作废。
+
+⚠️ 例外：FC1 step60 虽属"老点"，但今天(07-22)也被重判过一次(`rejudge_FC1step60_7bench.log`)，数据
+内部一致无异常，视为合法rejudge非污染。
+
+**已回填**：FCE artifact（"FCE — Fine Curve Eval"）已用新30点数据重新生成，主曲线口径改为6-bench均值
+（跨全部30点一致），HallusionBench仅在旧5点显示于数据表、不进主曲线。
+
+**下一步（未执行，需确认）**：曲线数据齐全，之前提过的"跑完能删800G"中间checkpoint可以启动
+（FC1/FC4两个keepall目录各398G）——按FCE-prune行执行，只删中间点，保留报告用的5点。
+
 ## 🔄 [301832756 07-22] FCE批次(120组合)已恢复，跳过已完成的68个只补剩余52个
 
 用户之前叫停judge（"不要跑judge"/"只跑training"），FCE批次在99/152时被kill；现在用户要求继续，已从
 `rejudge_batch_lowconc.log`解析出68个真正完成的FCE组合（另32个是Stage1的，不在这批范围内），生成
-`scripts/rejudge_batch_lowconc_resume.sh` 跳过这68个只补剩余52个，低并发(3路)继续跑，不重复浪费。
+`experiment_script/rejudge_batch_lowconc_resume.sh` 跳过这68个只补剩余52个，低并发(3路)继续跑，不重复浪费。
 GPU线（P33 no-anchor seed1234训练）不受影响，继续跑着。
 
 ## 🔵 [devbox 07-22 ~05:xx] P33 step60 eval + ours FC1 step60 同口径重判（验证 anchor 中段 acc 假设，用户 07-22 下达）
@@ -22,6 +107,20 @@ GPU线（P33 no-anchor seed1234训练）不受影响，继续跑着。
   若仍打平 → anchor 价值只在漂移/生成质量（acc 全程打平），维持现有诚实措辞。
 
 ## 🟢 [mlx session 07-22 ~04:2x] 本地空闲卡可认领的 eval（mlx public.pool 排队慢，用户指示本地跑）
+
+> ## 🔴🔴 [301967423 07-22 18:4x 更正——这 4 项**全部已完成**，请勿重跑]
+> 逐项核验（7-bench 口径 + Hallu fAcc 健康度）结果：
+> | 任务 | 实际状态 |
+> |---|---|
+> | **QA2**（α2.0 Q35-4B） | ✅ **7/7 齐**，fAcc 55.5 健康 —— 301832790 在被 kill 前已跑完补判分，**不是"0/9 全新"** |
+> | **S3 补判分** | ✅ **7/7 本来就齐**，fAcc 41.6 健康 —— **不需要补** |
+> | **QA1 补判分** | ✅ **7/7 本来就齐**，fAcc 54.9 健康 —— **不需要补** |
+> | **P34c 补判分** | ✅ **7/7 本来就齐**，fAcc 47.4 健康 —— **不需要补** |
+> 「需补 MathVista/POPE/HallusionBench 3 个判分」的判断有误：**POPE 本周已不在 7-bench 口径内**，
+> 而 MathVista/HallusionBench 三者都已有干净分数。**mlx 侧对应 job 可全部删除。**
+> 附：由此拼出的 **Qwen3.5-4B α 三点**（已回填 ledger）：α=0.5(QA1) 75.87 / α=1.0(P28) 76.77 / α=2.0(QA2) 76.30
+> ——**全区间只波动 0.90pp，α 敏感度远低于 2B（2B 两端掉 3.44/2.75）**，说明"α=1 最优"主要是小模型现象。
+
 
 以下 eval 本地没在跑、且卡在 mlx public.pool 队列，**本地空闲卡可直接跑**（9-bench，输出到 `outputs_vllm_curated`）：
 
@@ -43,9 +142,12 @@ GPU线（P33 no-anchor seed1234训练）不受影响，继续跑着。
 
 本机（301832790）本 session 本地跑掉的任务，**对应 mlx 提交可以删**：
 - ✅ **HR8K 3份污染重跑** / **geo3k D组** / **G1（ours→GRPO 序贯）** / **α=0 matched + P33 no-anchor**（含干净重判，anchor 冗余定论入 ledger）
-- ✅ **P37b/c（α=1.25/1.5）** 训练完+eval 收尾；P37a(0.75) 两次 OOM 待定
-- 🏃 **N5（base-9B）+ N6（OPSD-9B）** eval 本地跑中（shim→NAS conda，GPU2/3）
-- ⚠️ FA1/FA2 判分已核验**干净**、无需重判
+- ✅ **P37b/c（α=1.25/1.5）训练完**，eval 判分收尾；**P37a(0.75) 两次 OOM → 用户拍板 SKIP**（0.5/1.0 已bracket，信息增量最小）
+- 🏃 **N5（base-9B）+ N6（OPSD-9B）+ QA2（α=2.0 Qwen3.5-4B）** eval 本地跑中（shim→NAS conda，GPU2/3/5）
+- ✅ **S3/QA1/P34c 核验干净**（fAcc 41.6/54.9/47.4 健康，Unknown 2.6-3%）——**无需"补判分"，9项已齐可直接用**
+- ⚠️→🏃 **FA1/FA2/P26 判分复核**：Hallu 项之前核过干净，但**预测极啰嗦（BLINK 中位 1254-1413 字符）→ BLINK/MMStar/MathVista/HR 有 verbose-deflation 风险**（规则抽不出→需 GPT，原始 eval 若 GPT 没跑好会虚低）。**FA1(0.5)/FA2(2.0) 正在删缓存+规则优先-GPT 重判 7 项**；**P26(1.0=主表ours) 用户判定看着没问题、暂不重判**（用缓存 BLINK/MMStar/MathVista + 早先干净的 HR/Hallu 76.25/73.75/54.86）
+- 🏃 **P33 step60 GPU eval（GPU4）+ FC1 step60 判分重判**（step 曲线补点）
+> **⚠️ 判分坑通用教训（本 session 反复踩）**：uniform-unfiltered 系模型预测是长 CoT，MCQ/MathVista/Hallu 的规则提取抽不出→必须 GPT judge；原始 eval 若 GPT 判分被 socks/cache 坑就静默虚低（Unknown→算错）。**核验看 Hallu fAcc（<32=污染）+ Unknown%；修法=删 auxmatch/tmp/acc/gpt 全缓存 + rule-first-GPT 重判，值从 judge log RESULT_JSON 取（勿读旧 acc.csv）**。
 > **口径提醒（07-22 用户拍板，本周标准）**：eval 只跑 **paper 的 7 benchmark = BLINK/MMStar/VStarBench/MathVista_MINI/HRBench4K/HRBench8K/HallusionBench**（Hallu 三均）。**去掉 MMBench + POPE + ZoomBench**。`DATASETS=BLINK,MMStar,VStarBench,MathVista_MINI,HRBench4K,HRBench8K,HallusionBench`。（N5/N6 已按 9-bench 起跑，跑完只取这 7 项；新实验严格 7-bench。）
 
 ## 🔴 [devbox 07-22 04:xx] α消融 + 公共基准同口径重判——🔴高优（paper α消融要定稿，用户很急）
@@ -76,10 +178,10 @@ done
 
 **GPU线变动**：4B repo-6k(62step)训练应用户要求暂停（`用不同的seed，跑一下无anchor的training，我想看看是不是
 稳定`——先不管4B repo-6k了，插队跑这个）。P33本身之前只训过默认seed（301832790），这次换 **seed=1234**（本项目
-惯例的"第二seed"，跟其它seed对照点一致），配置完全照抄`scripts/run_p33_pure_contrast_noanchor_2b.sh`（uniform
+惯例的"第二seed"，跟其它seed对照点一致），配置完全照抄`experiment_script/run_p33_pure_contrast_noanchor_2b.sh`（uniform
 weight, anchor_coef=0, α=1.0, unfiltered virl39k, len6144, 90步）只加`data.seed=1234`。ckpt名
 `Vision-OPD-pure-contrast-noanchor-uniform-seed1234-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301832756`，
-driver `scripts/run_p33_noanchor_seed1234_301832756.sh`，已启动。目的是看不同seed下no-anchor训练是否稳定
+driver `experiment_script/run_p33_noanchor_seed1234_301832756.sh`，已启动。目的是看不同seed下no-anchor训练是否稳定
 （跟P33最初就带着的"崩溃是否比150步更早"稳定性关切一脉相承）。
 
 4B repo-6k(62step, uniform_weight=True，两处配置已修好)没有损失任何进度（停的时候还没到第一个训练step），
@@ -163,7 +265,7 @@ uniform_weight，纯offline改脚本；这次改steps又重启一次），已确
   ⚠️关键点：不设 `ANSWER_VAL_TRAIN_FILE`，让脚本走默认逻辑用 `prepare_answer_val_split.py` 自动切分
   train.parquet 出5985条训练集——已用日志"Generating train split: 5985 examples"核实真的是这个语料，不是
   virl39k）。ckpt名 `Vision-OPD-contrast-standard-Qwen3.5-4B-repo6k-90step-trial301832756`。跑完后按用户
-  说的顺序接 **Qwen3.5-2B ours × repo-6k**。driver `scripts/run_qwen35_4b_repo6k_ours_301832756.sh`。
+  说的顺序接 **Qwen3.5-2B ours × repo-6k**。driver `experiment_script/run_qwen35_4b_repo6k_ours_301832756.sh`。
   **⚠️ [301829143 07-22 00:5x] Qwen3.5-2B ours × repo-6k 已改由本机认领并启动**（用户直接下达，本机 8卡空闲，
   不用等 301832756 的 4B 跑完再串行）：完全照抄 301832756 的配方（加权 contrast-standard，不设
   `ANSWER_VAL_TRAIN_FILE`走默认切分train.parquet，len4096，conda qwen35，90步，8卡），driver
@@ -188,7 +290,7 @@ uniform_weight，纯offline改脚本；这次改steps又重启一次），已确
   只浪费了第一次 attempt 的 1h20m（Ray init 后到 14% 才发现），已重启。**同样提醒 301832756 的 4B repo6k
   检查是否也用了 bs32+90步截断**——如果是，同样对不上 repo-6k 的历史惯例，是否重跑仍由该机器自行判断。
 
-**judge重判线（CPU/API，低并发3路，不占GPU）**：`scripts/rejudge_batch_lowconc.sh`，Stage1剩余4点
+**judge重判线（CPU/API，低并发3路，不占GPU）**：`experiment_script/rejudge_batch_lowconc.sh`，Stage1剩余4点
 （N4/S2c/QL1/QS1）全部32个组合已跑完，FCE缺口20点(120个组合)刚开始，进度 33/152，目前 0 失败/0 再次
 exact-match退化。跑完会systematic audit一遍再回填FCE曲线数字。
 
@@ -209,7 +311,7 @@ exact-match退化。跑完会systematic audit一遍再回填FCE曲线数字。
 | HallusionBench aAcc/fAcc/qAcc | 47.4/19.9/24.4 | 68.6/45.4/46.4 |
 | MathVista_MINI | 63.9 | 63.9（未受污染，单独排查过，不变）|
 
-Stage1其余4点(N4/S2c/QL1/QS1)+FCE缺口20点的低并发批量重判仍在跑（`scripts/rejudge_batch_lowconc.sh`，
+Stage1其余4点(N4/S2c/QL1/QS1)+FCE缺口20点的低并发批量重判仍在跑（`experiment_script/rejudge_batch_lowconc.sh`，
 `logs/rejudge_batch_lowconc.log`），出完再回填。N6(Qwen3.5-9B OPSD训练)与本条并行不冲突，进展中。
 
 ## 📮 [301829143 07-21 22:3x] 6 个 checkpoint 训完+merge，尚未评测，请 mlx 提交
@@ -224,8 +326,8 @@ Stage1其余4点(N4/S2c/QL1/QS1)+FCE缺口20点的低并发批量重判仍在跑
 | QA2 | `checkpoints/Vision-OPD-contrast-uniform-alpha20-Qwen3.5-4B-virl39k-UNFILTERED1img-90step-trial301829143/global_step_90` | `qa2_uniform_alpha20_qwen35_4b_step90` | **qwen35 shim + conda**；同上，α 三点曲线第三点 |
 | P34b | `checkpoints/Vision-OPD-contrast-uniform-degrade-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301829143/global_step_90` | `p34b_ctrl_degrade_unfiltered_step90` | ctrl 消融，对照 black(P26,66.64)；无 shim |
 | P34c | `checkpoints/Vision-OPD-contrast-uniform-gaussnoise-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301829143/global_step_90` | `p34c_ctrl_gaussnoise_unfiltered_step90` | ctrl 消融，对照 black(P26,66.64)；无 shim |
-| P34a | `checkpoints/Vision-OPD-contrast-uniform-noimg-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-len4096-trial301829143/global_step_90` | `p34a_ctrl_noimg_len4096_step90` | ctrl 消融，**⚠️ len=4096**（其余三个 ctrl 消融都是 len6144，OOM 两次后改用；对比 black/degrade/gaussnoise 时须标注口径差异）；无 shim。~~mlx job `d73587e3`（原 job 被误停 STOP(7) 后重投，排队中）~~ **改由 301829143 本地跑（07-22 04:05，gpu1），mlx 这个 job 请手动取消，避免重复占用配额** |
-| P37c | `checkpoints/Vision-OPD-contrast-alpha15-uniform-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301829143/global_step_90` | `p37c_alpha15_unfiltered_step90` | α 精细扫描第四点，与 P37a(0.75)/P26主配方(1.0)/P37b(1.25) 拼 α∈[0.75,1.5] 曲线；无 shim（07-22 00:47 训完+merge）。~~**✅ [mlx 07-22 01:0x] 已提交** job `6c7cd0b568467cae`（665/public.pool，1卡，排队中未调度）~~ **改由 301829143 本地跑（07-22 04:05，gpu0），mlx 这个 job 请手动取消，避免重复占用配额** |
+| P34a | `checkpoints/Vision-OPD-contrast-uniform-noimg-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-len4096-trial301829143/global_step_90` | `p34a_ctrl_noimg_len4096_step90` | ✅ **[301829143 07-22 06:23] 本地 eval 已出**：BLINK 57.23 / MMStar 62.93 / MMBench 76.55 / VStar 74.87 / MathVista 63.10 / HR4K 76.38 / HR8K 72.88 / POPE 88.97 / Hallu 71.29，**7-bench均 69.13**（⚠️ len=4096，其余三个 ctrl 消融都是 len6144，对比 black/degrade/gaussnoise 时须标注口径差异）。mlx job `d73587e3` 请手动取消（已用本地结果） |
+| P37c | `checkpoints/Vision-OPD-contrast-alpha15-uniform-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301829143/global_step_90` | `p37c_alpha15_unfiltered_step90` | ✅ **[301829143 07-22 06:51] 本地 eval 已出**：BLINK 57.60 / MMStar 63.73 / MMBench 77.92 / VStar 75.39 / MathVista 66.50 / HR4K 77.25 / HR8K 72.62 / POPE 88.70 / Hallu 67.82，**7-bench均 70.15**——与主配方α=1.0(70.68)差仅0.53pp，噪声带内，支持"α∈[1.0,1.5]平坦"假说。mlx job `6c7cd0b568467cae` 请手动取消（已用本地结果） |
 
 **✅ [mlx session 07-21 23:4x] 6 个全部已提交**（**改用 665/public.pool 队列** —— 668/guarantee 队列 07-20/21 卡死；tokenizer 全 dict 正常，checkpoint 已核实齐）：S3=`a0aa24a626dee0cb` / QA1=`ffc28dc9ae1be7a4`（qwen35 shim+conda）/ QA2=`75aabe8590fba002`（qwen35 shim+conda）/ P34a=`b10d06f00ef00ac4` / P34b=`85052671a24795ed` / P34c=`970738806fcd08e7`。均 status=3 已受理（未被拒），待观察 public.pool 能否调度上 1 卡 eval。
 
@@ -403,7 +505,7 @@ export PYTHONPATH=$V/.syspkg_shim:$OPSD/VLMEvalKit        # 给硬编码 /usr/bi
 进程退出码/日志"finished"字样是不够的——之后必须抽查 `normal_scoring/*_acc.csv` 是否真的写出了有效数字
 再报告结果。
 
-全量重跑已用 `scripts/run_full_redo_301832756.sh`（PYTHONPATH 已按上面改好）放开后台跑：merge FC1/FC4
+全量重跑已用 `experiment_script/run_full_redo_301832756.sh`（PYTHONPATH 已按上面改好）放开后台跑：merge FC1/FC4
 缺的10档 → 5个单点eval重跑(N4/S2c/QL1/α=0/QS1) → FCE缺口20点eval。之前"跑完"的 N4/S2c/QL1/α=0/QS1 以及
 FCE 20个缺口点，产出全部作废，等这次真实数据。
 
@@ -415,14 +517,14 @@ FCE 20个缺口点，产出全部作废，等这次真实数据。
 （`PYTHONNOUSERSITE=1`）merge 同一个 checkpoint 一次通过，问题定位为 conda torch 版本，非 checkpoint 损坏。
 **修复**：driver 里的 merge 调用改为 `PYTHONNOUSERSITE=1 bash scripts/merge_checkpoint.sh`（eval 部分仍用
 conda，只有 merge 这一步切系统栈），并加上失败显式记日志（之前是静默吞掉失败继续下一个）。链已重启
-（driver `scripts/run_priority_chain_301832756.sh`，从 stage 1 α=0 eval 重新开始，之前那次 stage1 未产出
+（driver `experiment_script/run_priority_chain_301832756.sh`，从 stage 1 α=0 eval 重新开始，之前那次 stage1 未产出
 有效数据）。
 
 # 排队实验 — 2026-07-13
 
 ## 🔗 [301832756 07-21 02:2x] 优先级链已挂：α=0 → FCE(补merge+30点) → QS1
 
-按用户排定优先级，chained driver `scripts/run_priority_chain_301832756.sh` 已挂起，等 N4/S2c/QL1
+按用户排定优先级，chained driver `experiment_script/run_priority_chain_301832756.sh` 已挂起，等 N4/S2c/QL1
 批次清场后自动依次执行：
 1. **α=0 matched baseline eval**（9-bench，`alpha0_matched_baseline_step90`，MODEL_NAME 已避开与
    alpha05 撞名）
@@ -439,7 +541,7 @@ conda，只有 merge 这一步切系统栈），并加上失败显式记日志�
 
 三个刚训完的 checkpoint（N4=Qwen3.5-9B主配置、S2c=2B answer-hint seed777、QL1=Qwen3.5-4B len4096
 仲裁点）盘点后发现都还没排 eval——mlx 之前那批 20 项系统性失败，直接走本地。已启动 3 路并行
-（conda qwen35，GPU0-2，driver `scripts/run_eval_n4_s2c_ql1_301832756.sh`），9-bench 全套，
+（conda qwen35，GPU0-2，driver `experiment_script/run_eval_n4_s2c_ql1_301832756.sh`），9-bench 全套，
 输出口径 `_server_qwen3vl2b_temp0_4096_generic`（与其他本地跑一致，防撞名）。
 
 # 排队实验 — 2026-07-13
@@ -463,7 +565,7 @@ X5 重跑那次缺 termcolor/validators/openpyxl 时用的一样）。**最终�
 `PYTHONNOUSERSITE=1 PYTHONPATH=.../.syspkg_shim python3 -c "import tensorboard,torch,transformers,flash_attn"`
 全部干净通过（tensorboard2.20.0+torch2.8.0+transformers4.57.0+flash_attn2.8.1）。**本机今后所有
 plain Qwen3-VL 训练命令都要带这两个 env var**（S2c 用此修复第三次重启，driver
-`scripts/run_s2c_retry2_301832756.sh`）。未清理 user-local 污染源本身，是因为清理有风险，显式加
+`experiment_script/run_s2c_retry2_301832756.sh`）。未清理 user-local 污染源本身，是因为清理有风险，显式加
 env var 更安全。
 
 # 排队实验 — 2026-07-13
@@ -491,7 +593,7 @@ env var 更安全。
 > 回答"对比锐化到底有没有用"。
 >
 > **代码**：`verl/workers/config/actor.py` validator 已放宽（`ra_contrast_alpha<=0` → `<0`，α=0 允许、
-> α<0 仍拒；已 smoke-test 验证）。driver `scripts/run_alpha0_matched_baseline_20260720.sh`（armed，
+> α<0 仍拒；已 smoke-test 验证）。driver `experiment_script/run_alpha0_matched_baseline_20260720.sh`（armed，
 > 等 G1 9-bench + D 组 eval 腾出 8 卡后 fresh 启动，训完自动 merge 30/60/90）。
 > ckpt = `Vision-OPD-contrast-alpha0-uniform-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301832790`。
 >
@@ -566,7 +668,7 @@ N3b/N3c(conda qwen35 判分链缺 `termcolor`)、FC1/FC4(普通 vllm_server eval
 
 盘点发现 8/10 单点项（N1/FA1-4/S1-seed1234/S2b/N3a）**已被别的机器跑完**（`_server_qwen3vl2b_temp0_4096_generic`
 命名口径，9/9 分文件齐）。剩 **12 项未跑**：N3b/N3c（Qwen3.5-2B，需 conda+shim）+ FC1×5（2B ours 细曲线）+
-FC4×5（2B OPSD 细曲线）。本机 8 卡全空，已认领并启动：driver `scripts/run_local_batch_20260720_301832756.sh`，
+FC4×5（2B OPSD 细曲线）。本机 8 卡全空，已认领并启动：driver `experiment_script/run_local_batch_20260720_301832756.sh`，
 两波并行（wave1: N3b/N3c+FC1[30,60,90]+FC4[30,60] 共8路；wave2: FC1[120,150]+FC4[120,150] 共4路），
 沿用相同命名口径避免撞名，judge nproc=2 防止本机内部 8 路合打 429。
 
@@ -632,7 +734,7 @@ ckpt名 `Vision-OPD-baseline-seed42-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-tr
 
 **N4**：下载 `Qwen/Qwen3.5-9B` → `cache/Qwen3.5-9B`（本机 7890 代理已验证）→ **主配置训练**（uniform×unfiltered，
 alpha=1.0 默认，90步，conda qwen35 env，8卡）。ckpt名 `Vision-OPD-contrast-standard-uniformweight-Qwen3.5-9B-virl39k-UNFILTERED1img-90step-trial301832756`。
-🏃 **301832756 已启动（07-20 18:27，driver `scripts/run_n4_qwen35_9b_301832756.sh`）**，自动 merge 30/60/90。
+🏃 **301832756 已启动（07-20 18:27，driver `experiment_script/run_n4_qwen35_9b_301832756.sh`）**，自动 merge 30/60/90。
 
 **len 选择**：直接用 **len4096**（不试 6144）——QS1 已实证 Qwen3.5-4B @6144 是 seed 依赖型 OOM
 （59.68GiB 签名，非环境问题，见上文 QS1 记录）；9B 比 4B 更大、全词表蒸馏显存更紧，从安全长度起步，
@@ -731,7 +833,7 @@ acc_ctrl 71.4——黑图还能 71%，语言先验泄漏实锤）；VStar 不变
 intro 的两个 todo 数字齐了：`analysis_outputs/m1_probe/{pope,vstar}_2b_base.json`。
 
 **P28v2/FA5 首次启动失败已重启**：死因=启动时 GPU0 被残留进程占用（vLLM 需 124.85GB，仅剩 13.8GB），
-非配置问题；已确认 8 卡回落基线后重启（driver `scripts/run_p28v2_fa5_retry_301761390.sh`，FA5 改 8 卡跑）。
+非配置问题；已确认 8 卡回落基线后重启（driver `experiment_script/run_p28v2_fa5_retry_301761390.sh`，FA5 改 8 卡跑）。
 
 ## 🏛️ [301761390 07-18 05:1x] 4B 仲裁终局：X5 独立重跑复现 + P19 出全，三个结论
 
@@ -774,14 +876,14 @@ trained 侧 +0.5 有之）。结论：
    全部脚本在 `scripts/mlx_batch_20260718/`，与几小时前的原始全量提交（`mlxq_x14_*`/`mlxq_ve1_*` 等）不重复——
    窄 DATASETS 范围，快很多。
 4. **P25/P28（Qwen3.5 OPSD/uniform × unfiltered）训练**：两个都分配给本机、之前"未动"——已挂链
-   `scripts/run_p25_p28_301761390.sh`（沿用 T3a/T3b 验证过的配方：`PYTHONNOUSERSITE=0` + `MODEL_PATH=cache/Qwen3.5-4B`，
+   `experiment_script/run_p25_p28_301761390.sh`（沿用 T3a/T3b 验证过的配方：`PYTHONNOUSERSITE=0` + `MODEL_PATH=cache/Qwen3.5-4B`，
    8卡），P25 已启动。P25 完成后自动接 P28。
 
 **附带**：实现了 no-think baseline eval 能力（`VLMEvalKit/shell_scripts/eval_via_vllm_server_nothink.sh` +
 `eval_model_temp0_4096_nothink.sh`，独立副本不碰正在被 9 个刚提交任务使用的原脚本）——Qwen3.5 chat template
 原生支持 `enable_thinking=False`，透传 `chat_template_kwargs` 到 vLLM server。动机：base 在 HRBench 上
 think 率 ~88.6%，ours/OPSD 训练后 0%，base-vs-trained 比较存在 think/no-think 混杂——待 GPU 空出后跑
-`scripts/eval_qwen35_base_nothink.sh`（HRBench4K/8K/POPE/VStar/BLINK/MMStar）。
+`experiment_script/eval_qwen35_base_nothink.sh`（HRBench4K/8K/POPE/VStar/BLINK/MMStar）。
 
 
 ## 🔍 eval 有效性审计（2026-07-18 凌晨，trial 301761390，起因=用户质疑 4B/Qwen3.5 掉分与 V* 摆动）
@@ -798,8 +900,8 @@ think 率 ~88.6%，ours/OPSD 训练后 0%，base-vs-trained 比较存在 think/n
    X7 种子对 V* 同理修正：±6.8→**±5.8pp**（seedA 1 题、seedB 3 题 judge 误判）。引用 HRBench/V* 差异时请带此校正。
 3. **X5（4B ours@6144）掉分**：eval infra 查无问题（infer 0%、judge 干净、图像正确、抽取偏倚 0.2pp 可忽略），
    但用户认为低得反常——**已在 301761390 本机重跑完整 eval+judge**（07-18 06:1x 启动，系统栈 vllm 0.11 与原容器同版本，
-   `MODEL_NAME=contrast_std_4b_virl39k_step90_rerun0718` 独立目录，driver `scripts/rerun_x5_eval_local_301761390.sh`）。
-   同时后台在跑 9 模型 × HRBench4K/8K/VStar 的 **judge 全量重判**（`scripts/rescore_hrbench_vstar_20260718.sh`，
+   `MODEL_NAME=contrast_std_4b_virl39k_step90_rerun0718` 独立目录，driver `experiment_script/rerun_x5_eval_local_301761390.sh`）。
+   同时后台在跑 9 模型 × HRBench4K/8K/VStar 的 **judge 全量重判**（`experiment_script/rescore_hrbench_vstar_20260718.sh`，
    旧判分备份于各目录 prejudge_backup_20260718/）。两者出数后统一回填。P19@4096 仲裁不变。原判断留档：X5 掉分是真实的：infer 0%、judge 干净、图像正确、抽取偏倚可忽略——eval 无问题，
    低分是 checkpoint 本身。是否 len6144 训练的锅由 **P19@4096（eval 推理中）仲裁**，出分前 4B 结论保持冻结。
 
@@ -825,8 +927,8 @@ think 率 ~88.6%，ours/OPSD 训练后 0%，base-vs-trained 比较存在 think/n
 - β=0.1→0：argmax改变率 5.71%→6.38%（+0.67pp），垃圾argmax率（新argmax在p_hi下rank>10）0.006%→0.061%（占改变位置的 0.97%，样例 '.'→':'、'='→'$' 级别的小垃圾）
 - EOS豁免 on/off：各项指标几乎无差（EOS概率变化量级 1e-6，EOS夺argmax=0 例）——**豁免在离线阶段是 no-op**，其价值（若有）只能来自训练动态
 - 汇总表 `analysis_outputs/contrast_target_precheck_x13/summary.csv`。训练动态是否放大由 P13/P14 定。背景：β mask=CD 论文的 adaptive plausibility constraint 移植，EOS 豁免防长度分布漂移——两者都从未单独验证，若 w_t claim 被去掉、guarded tilting 升格核心机制，这两个就是审稿人必问项 |
-| P13 | β=0（无 plausibility mask），2B × virl39k 90步 | contrast-标准配置 + `ra_contrast_beta=0.0` | 🏃 **301832790 认领（07-17 02:4x，用户直接下达开训）**：T3b 收尾后 GPU0-3 自动启动（driver `scripts/run_x13_p13_after_t3b.sh`），ckpt名 `Vision-OPD-contrast-beta0-Qwen3-VL-2B-virl39k-90step-trial301783374`。✅ **完成（07-17 06:4x），step30/60/90 已 merge**（首启曾被配置校验挡下，放宽为 [0,1) 后重启，commit 162d0a3）。待评：见 X8 行 |
-| P14 | 无 EOS tilt 豁免，2B × virl39k 90步 | contrast-标准配置去掉 exclude_token_ids；顺带观察对 verbosity 副作用的影响 | ✅ **完成（07-17 07:56，301761390，90/90，step30/60/90 已 merge，X14 待评）** 🏃 曾挂自动链（07-17 02:32）：driver `scripts/run_p14_p8_after_p6_301761390.sh` 等 P5/P6 链正常结束后自动启动 P14（GPU0-3）**并同时抢跑 P8（GPU4-7，带双跑保护：若 301829143 链先出进度则自动跳过）**，各自动 merge 30/60/90。ckpt名 `Vision-OPD-contrast-noeosexempt-Qwen3-VL-2B-virl39k-90step-trial301761390`。预计启动 ~05:30，step90 ~08:00。原始命令留档：
+| P13 | β=0（无 plausibility mask），2B × virl39k 90步 | contrast-标准配置 + `ra_contrast_beta=0.0` | 🏃 **301832790 认领（07-17 02:4x，用户直接下达开训）**：T3b 收尾后 GPU0-3 自动启动（driver `experiment_script/run_x13_p13_after_t3b.sh`），ckpt名 `Vision-OPD-contrast-beta0-Qwen3-VL-2B-virl39k-90step-trial301783374`。✅ **完成（07-17 06:4x），step30/60/90 已 merge**（首启曾被配置校验挡下，放宽为 [0,1) 后重启，commit 162d0a3）。待评：见 X8 行 |
+| P14 | 无 EOS tilt 豁免，2B × virl39k 90步 | contrast-标准配置去掉 exclude_token_ids；顺带观察对 verbosity 副作用的影响 | ✅ **完成（07-17 07:56，301761390，90/90，step30/60/90 已 merge，X14 待评）** 🏃 曾挂自动链（07-17 02:32）：driver `experiment_script/run_p14_p8_after_p6_301761390.sh` 等 P5/P6 链正常结束后自动启动 P14（GPU0-3）**并同时抢跑 P8（GPU4-7，带双跑保护：若 301829143 链先出进度则自动跳过）**，各自动 merge 30/60/90。ckpt名 `Vision-OPD-contrast-noeosexempt-Qwen3-VL-2B-virl39k-90step-trial301761390`。预计启动 ~05:30，step90 ~08:00。原始命令留档：
 | P31 | **β=0 边界续训：P13 的 run 续到 200 步** | resume `Vision-OPD-contrast-beta0-Qwen3-VL-2B-virl39k-90step-trial301783374`（latest=90），`trainer.total_training_steps=200`；注意 ckpt world_size 绑定（P21 教训：几卡训的只能几卡续）；+110 步 + rollout 复读/中英混杂扫描 | 🔧 **改道跑通（07-18 00:1x，301761390）**：原地 FSDP resume（GPU1-4、GPU0-3 两种编号各试两次）**全部崩在同一处** `fsdp_checkpoint_manager.py:138`（模型权重 sharded load 触发 torch DTensor 内部 `AttributeError: DeviceMesh no attribute _mesh_dim_names/_device_type`——`checkpoint.load_contents=[model]` 跳过 optimizer 仍崩，确认是模型分片加载路径本身的问题，疑似保存/加载环境 torch 版本细节不兼容，非 GPU 编号问题）。**改用 merge 好的 HF 权重冷启动**：`MODEL_PATH=.../global_step_90`（HF格式，绕开FSDP分片加载）+ `trainer.total_training_steps=110`，`EXPERIMENT_NAME=...-trial301761390-ext200`，本地 step1-110 对应原逻辑 step91-200。**⚠️ 已知代价（如实记录）**：optimizer 动量清零重开 + `lr_warmup_steps=10` 从零重新爬升（原调度在 step91 早已过warmup），前 10 步 lr 非稳态——判读 loss/曲线时建议跳过本段前10步或标注。跑通验证：step1 已产出正常 loss/KL 统计，训练中；完成后 merge 三点，本地 step60/90/110 对应逻辑 step150/180/200。eval 待 mlx，同模板。
 
 **✅ [301761390 07-18 03:2x] P31 训完 + merge + 复读扫描完成**：本地 step60/90/110 已 merge 并软链接为逻辑
@@ -945,7 +1047,7 @@ seed1234 67.65/67.88）；**真正的新发现 = 2B run-to-run variance ≈ ±3p
 
 | # | 任务 | 说明 | 状态 |
 |---|---|---|---|
-| S1 | **主配置 seed 加固**：uniform × unfiltered × 2B × 90步 × `data.seed=1234`（即原 FA5，升格必跑）；如有余力再加 seed=777 | 主表 2B 行的 mean±std 需要 ≥2 个 seed（±3pp 噪声下单 seed 数字必须带 std 报告） | 🏃 **301761390 已启动（07-19 01:57，8卡 fresh）**：ckpt名 `Vision-OPD-contrast-uniform-seed1234-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301761390`，driver `scripts/run_s1_l2f_fc2_v2_301761390.sh`（后接 L2f→FC2），自动 merge 30/60/90。seed777 版已完成——S1 齐后主表 2B 行 = 默认/1234/777 三 seed mean±std |
+| S1 | **主配置 seed 加固**：uniform × unfiltered × 2B × 90步 × `data.seed=1234`（即原 FA5，升格必跑）；如有余力再加 seed=777 | 主表 2B 行的 mean±std 需要 ≥2 个 seed（±3pp 噪声下单 seed 数字必须带 std 报告） | 🏃 **301761390 已启动（07-19 01:57，8卡 fresh）**：ckpt名 `Vision-OPD-contrast-uniform-seed1234-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301761390`，driver `experiment_script/run_s1_l2f_fc2_v2_301761390.sh`（后接 L2f→FC2），自动 merge 30/60/90。seed777 版已完成——S1 齐后主表 2B 行 = 默认/1234/777 三 seed mean±std |
 | S2a | **V-e3 归因审计** | ✅ **完成（07-18 15:4x devbox）**：既非 judge 崩也非复读训崩（1901 条 0 API 失败、复读~1%、文本连贯）。**根因 = hint 依赖幻觉**：回答凭空引用"reference answer"的比例 unfiltered 版 **239/1901=12.6%** vs filtered 版 56/1901=2.9%（4.3×）——answer-hint 训练教会模型"上下文有参考答案"，eval 无 hint 时幻觉一个并朝想象答案推理（样例："Based on...the reasoning in the reference answer, the correct choice is B"）。**= privileged-hint 训练的 train-test mismatch 本征缺陷，unfiltered 噪声放大之；paper 可作 motivation 硬证据（黑图 ctrl 结构性免疫此失败模式）**。S2b 仍跑以确认可复现 | ✅ |
 | S2b | **answer-hint × unfiltered 2B 换 seed 重训**（P22 配方 + data.seed=1234，90步） | 用户怀疑 V-e3 崩是偶发（训崩/judge崩）——seed 重训验证是否复现；若复现=真实方法脆弱性（可写）；不复现=单次事故，V-e3 作废重跑 | 🏃 **301832790 已启动（07-18 16:3x，GPU1-4，fresh seed1234）**，ckpt名 `Vision-OPD-baseline-seed1234-...-UNFILTERED1img-90step-trial301783374`，自动 merge；eval 待 mlx。**✅ [mlx session 07-19 22:0x] 已提交**：job_id `cf04c1332ea3d09f` |
 | L1 | **eval 生成长度探针（qwen3vl-4B）**：用 max_new_tokens=**8192** 重评两臂——① X5 ckpt（4B ours@len6144 训练）② 4B base；对照各自 @4096 的既有数字 | 用户假设：len6144 训出的模型 CoT 更长，eval 4096 截断可能压分——若 @8192 下 ours(6144训) 反超 base，则 X5"低于 base"是 eval 截断假象，且主表 eval 口径要重新考虑。注意 eval 脚本是 `eval_model_temp0_4096.sh`（4096 写死），需复制改 max_new_tokens=8192 的变体 wrapper；vllm serve max-model-len 需 ≥ prompt+8192 | ✅ **L1 完成（07-18 18:0x，301832790）——截断假设不成立**：@8192 下 base 75.60（vs @4096 75.48，+0.12）、X5(len6144训) 73.33（vs 73.58，−0.25）——加长生成上限救不回 X5，其低分不是 eval 截断假象；**len6144 训练损伤结论（P19 仲裁）加固，主表 eval 口径维持 4096 不变**。输出在 `qwen3vl_temp0_8192_probe` 后缀目录 |
@@ -1135,12 +1237,12 @@ Decoding 原始打分**（Li et al.）。回答审稿人必问的"vs 纯 CD、�
 （`ra_vad.py` build_contrast_target 参数+公式 `float(anchor_coef)*lp_hi + float(alpha)*(lp_hi-lp_ctrl)`、
 ra_kd_loss 透传；`dp_actor.py:1369` 从 config 读；`config/actor.py`+`actor.yaml` schema 注册）。
 `anchor_coef=1.0`(默认)=现状不变（Codex 确认 float(1.0)*lp_hi 数值完全一致）；**`anchor_coef=0.0`+`alpha=1.0`=纯对比 lp_hi−lp_ctrl**。
-β 支撑集保留、EOS 豁免仍用 lp_hi（Codex 确认 anchor=0 下都正常）。**wrapper 就绪**：`scripts/run_p33_pure_contrast_noanchor_2b.sh`（一条命令，8卡，anchor_coef=0.0）。
+β 支撑集保留、EOS 豁免仍用 lp_hi（Codex 确认 anchor=0 下都正常）。**wrapper 就绪**：`experiment_script/run_p33_pure_contrast_noanchor_2b.sh`（一条命令，8卡，anchor_coef=0.0）。
 ⚠️ **别和 α=0 matched baseline 混**：那个是 α=0（纯 anchored teacher 蒸馏，无对比）；P33 是 anchor_coef=0/α=1（纯对比，无锚）——两个不同实验。
 
 | # | 任务 | 配置 | 状态 |
 |---|---|---|---|
-| P33 | **纯对比 target（no-anchor）2B × unfiltered，90步** | 终局配置 + `ra_contrast_anchor_coef=0.0`（α 仍 1.0、β 仍 0.1）；**save_freq=10 多存 checkpoint**（观察崩溃是否比现在的 150 步更早）；len6144/bs32；wrapper `scripts/run_p33_pure_contrast_noanchor_2b.sh` | 🔥🔥 **最高优先（07-20 用户拍板，超过 α=0 baseline）——立即在最先空出的 8 卡机 fresh 启动，不再串在任何任务之后**。📢 **改分配 301761390**（它空着，只剩 P35 在后；别再等 301832790 的 α=0 队尾）。⚠️ 301832790 的 `run_p33_noanchor_after_alpha0_20260720.sh` 串行 driver **作废/让位**（避免双跑；若它已先起则以先产出 checkpoint 的为准、另一台跳过）。ckpt名 `Vision-OPD-contrast-noanchor-uniform-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial<trialid>`，anchor_coef=0 validator 已 smoke-test。训完 merge 30/60/90 + eval（提优先） |
+| P33 | **纯对比 target（no-anchor）2B × unfiltered，90步** | 终局配置 + `ra_contrast_anchor_coef=0.0`（α 仍 1.0、β 仍 0.1）；**save_freq=10 多存 checkpoint**（观察崩溃是否比现在的 150 步更早）；len6144/bs32；wrapper `experiment_script/run_p33_pure_contrast_noanchor_2b.sh` | 🔥🔥 **最高优先（07-20 用户拍板，超过 α=0 baseline）——立即在最先空出的 8 卡机 fresh 启动，不再串在任何任务之后**。📢 **改分配 301761390**（它空着，只剩 P35 在后；别再等 301832790 的 α=0 队尾）。⚠️ 301832790 的 `run_p33_noanchor_after_alpha0_20260720.sh` 串行 driver **作废/让位**（避免双跑；若它已先起则以先产出 checkpoint 的为准、另一台跳过）。ckpt名 `Vision-OPD-contrast-noanchor-uniform-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial<trialid>`，anchor_coef=0 validator 已 smoke-test。训完 merge 30/60/90 + eval（提优先） |
 
 **判读**：与主配置 ours(2B 66.64) 对比——(a) 打平或更好 → 锚可去，方法更接近纯 CD 更简洁；
 (b) 更差/更早崩 → 锚是必要设计，写进 ablation 一行"expert anchor prevents ratio-driven degeneration"。
@@ -1148,7 +1250,7 @@ ra_kd_loss 透传；`dp_actor.py:1369` 从 config 读；`config/actor.py`+`actor
 
 📢 **分配 + 提优先级（07-20 用户拍板"提高优先级"）：P33 = 最高优先训练任务，代码已就绪只差启动。
 分配给最先空出 8 卡的机器（301761390 优先——它队列里 P33 本就排第一；若它还在忙别的，任意空闲机器抄
-`scripts/run_p33_pure_contrast_noanchor_2b.sh` 直接跑，~3h + 9-bench eval）。** 排在其余新消融（P34/P35/P36）之前。
+`experiment_script/run_p33_pure_contrast_noanchor_2b.sh` 直接跑，~3h + 9-bench eval）。** 排在其余新消融（P34/P35/P36）之前。
 
 ## 🆕 S2c — 2B OPSD×unfiltered 第三 seed（2026-07-20 用户拍板：V-e3 疑似坏训练）
 
@@ -1178,7 +1280,7 @@ ra_kd_loss 透传；`dp_actor.py:1369` 从 config 读；`config/actor.py`+`actor
 | # | 任务 | 配置 | 状态 |
 |---|---|---|---|
 | QL1 | **Qwen3.5-4B len 仲裁**：uniform × unfiltered @ **len4096**，90步 | P28 配方只改 len（与 P28@6144 的 W1 构成单因子 len 对）；conda qwen35 | ✅ **301829143 训完（07-20 01:14，90/90，2h55m/8卡）**，step30/60/90 已 merge+prune → `Vision-OPD-contrast-standard-uniformweight-Qwen3.5-4B-virl39k-UNFILTERED1img-90step-len4096-trial301829143`，**eval 可排（mlx，conda qwen35 shim，建议 `ql1_uniform_qwen35_4b_unfiltered_len4096_step90`）**。出数后与 W1（同配方@6144，79.18）做 4B 4096-vs-6144 的 Qwen3.5 len 仲裁 |
-| QS1 | **Qwen3.5-4B seed 复跑**：uniform × unfiltered @6144 × `data.seed=1234`，90步 | Qwen3.5 行 mean±std（**稳健性报告，不得挑 seed 换数**）；conda | 🔧 **改道 len4096（07-20 09:0x，301832756）**：@6144 两次同签名 backward OOM（59.68GiB，step31 原始/step50 降 rollout池0.55 后）——与 seed=1234 换的数据顺序踩到长序列批次有关（W1 默认seed@6144 跑满150步无恙），非环境问题。已改用项目记录的 Qwen3.5 安全长度 **len4096** 重跑（driver `scripts/run_qs1_len4096_301832756.sh`），ckpt名加 `-len4096` 后缀。⚠️ **与 W1(@6144) 不再是单因子对照**——mean±std 报告需标注 len 差异，或等 QL1（同配方@4096 默认seed）出数后按"同 len 配对"二次核对 |
+| QS1 | **Qwen3.5-4B seed 复跑**：uniform × unfiltered @6144 × `data.seed=1234`，90步 | Qwen3.5 行 mean±std（**稳健性报告，不得挑 seed 换数**）；conda | 🔧 **改道 len4096（07-20 09:0x，301832756）**：@6144 两次同签名 backward OOM（59.68GiB，step31 原始/step50 降 rollout池0.55 后）——与 seed=1234 换的数据顺序踩到长序列批次有关（W1 默认seed@6144 跑满150步无恙），非环境问题。已改用项目记录的 Qwen3.5 安全长度 **len4096** 重跑（driver `experiment_script/run_qs1_len4096_301832756.sh`），ckpt名加 `-len4096` 后缀。⚠️ **与 W1(@6144) 不再是单因子对照**——mean±std 报告需标注 len 差异，或等 QL1（同配方@4096 默认seed）出数后按"同 len 配对"二次核对 |
 | FCE-merge | **FC1 + FC4 各补 merge 中间 10 档**（10/20/40/50/70/80/100/110/130/140；30/60/90/120/150 已 merge） | 20 个 merge，CPU/1卡快 | 📢 **分配 301832756**（本机现跑 N3b/N3c/FC 老批，接着做）：FC1+FC4 各补 merge 中间 10 档 |
 | FCE-eval | **细曲线 eval：FC1(ours 2B uniform×unfiltered)+FC4(OPSD 2B) 各 15 点(step10-150每10步)**，**每点跑全 7 项 benchmark**：BLINK / MMStar / V* / MathVista / HR4K / HR8K / Hallu（三均）——**逐 benchmark 存好，用户之后自选 report 单 benchmark 曲线 or 7-bench avg 曲线** + 逐 step hint 幻觉率(BLINK xlsx 提 reference-answer 率) | 30 eval × 7 bench（新 suite，与主表 Acc 同口径）；先跑哪几个都行但**最终每点 7 项要齐**，别只留快组 | 📢 **分配 301832756**（FCE-merge 后接跑，高优先）：30 点 × 7 项，逐 benchmark 存。产出 ours vs OPSD 双线细曲线（可切单项/均值两种视图） |
 | **FCE-prune（省 800G）** | FCE-eval 出全数字后删 FC1+FC4 中间 checkpoint | 两 keepall 目录各 398G，共 **~800G**（`...contrast-uniform...2B...150step-keepall-trial301783374` + `...baseline...2B...150step-keepall-trial301783374`） | 📢 **301832756**（FCE-eval 数字回填后自己删）：**勿在 eval 出全前删**；删时中间点删掉、保留报告用的点，回收 ~800G |
@@ -1214,7 +1316,7 @@ ra_kd_loss 透传；`dp_actor.py:1369` 从 config 读；`config/actor.py`+`actor
 | FA3 | β=0（uniform, unfiltered） | β 消融在终局配置上的复核（X17 的 −1.57pp 是带权重×filtered 口径） | ✅ **301829143 训完（07-18 18:52，90/90，2h18m/8卡）**，step30/60/90 已 merge+prune → `Vision-OPD-contrast-uniform-beta0-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301829143`，**eval 可排（mlx，建议 `fa3_uniform_beta0_unfiltered_step90`）**。**✅ [mlx session 07-19 22:0x] 已提交**：job_id `a6150fde9bce7796` |
 | FA4 | 无 EOS tilt 豁免（uniform, unfiltered） | EOS 判定在终局配置上的复核 | ✅ **301829143 训完（07-18 21:11，90/90，2h17m/8卡）**，step30/60/90 已 merge+prune → `Vision-OPD-contrast-uniform-noeosexempt-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301829143`，**eval 可排（mlx，建议 `fa4_uniform_noeosexempt_unfiltered_step90`）**。FA 批四消融（FA1/FA2/FA3/FA4）训练侧全齐。N3a（8B OPSD）已自动接跑（21:12）。**✅ [mlx session 07-19 22:0x] 已提交**：job_id `9dab30e12a52631a` |
 | FA5(升格并入 S1) | ~~seed=1234~~ → **seed=777**（uniform, unfiltered） | S1(seed1234) 已归 301832790——本机同 seed 会三重复，改跑 **seed=777**（S1 行"如有余力再加 seed=777"），主表 2B 行凑齐 3-seed（默认/1234/777）mean±std | 🏃 **301761390 driver v4 已挂（07-18 16:5x）**：P28@150 收尾后 8 卡 fresh，ckpt名 `Vision-OPD-contrast-uniform-seed777-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301761390`。no-think baseline eval 已完成（见下方 no-think 对照结果节） |
-| （FINAL-WAVE 续训分配） | P26(2B)/P27(4B) 90→150 续训 → **必须回 301829143 原机 resume**（P31 实证：跨机 FSDP resume 触发 DTensor 崩溃，HF 冷启动 workaround 有 warmup 非稳态代价——原机原环境 resume 优先；若原机 resume 也崩，则按 P31 的 HF 冷启动法并标注前 10 步）; P28(Qwen3.5) 归 301761390 | eval：step90/120/150 × 三 scale 全部 mlx | 📢 301829143 立即可开 P26/P27 续训。**P28 改型（301761390 07-18 03:5x）**：P28 原本还没开跑，直接 `total_training_steps=150` 一次训齐（save_freq=10 白拿 90/120/150 三点，完全绕开续训 resume 的 DTensor 坑），ckpt名 `Vision-OPD-contrast-standard-uniformweight-Qwen3.5-4B-virl39k-UNFILTERED1img-150step-trial301761390`，driver `scripts/run_p25_p28v2_fa5_301761390.sh`（P25 收尾后自动接，训完自动 merge 全部五点） |
+| （FINAL-WAVE 续训分配） | P26(2B)/P27(4B) 90→150 续训 → **必须回 301829143 原机 resume**（P31 实证：跨机 FSDP resume 触发 DTensor 崩溃，HF 冷启动 workaround 有 warmup 非稳态代价——原机原环境 resume 优先；若原机 resume 也崩，则按 P31 的 HF 冷启动法并标注前 10 步）; P28(Qwen3.5) 归 301761390 | eval：step90/120/150 × 三 scale 全部 mlx | 📢 301829143 立即可开 P26/P27 续训。**P28 改型（301761390 07-18 03:5x）**：P28 原本还没开跑，直接 `total_training_steps=150` 一次训齐（save_freq=10 白拿 90/120/150 三点，完全绕开续训 resume 的 DTensor 坑），ckpt名 `Vision-OPD-contrast-standard-uniformweight-Qwen3.5-4B-virl39k-UNFILTERED1img-150step-trial301761390`，driver `experiment_script/run_p25_p28v2_fa5_301761390.sh`（P25 收尾后自动接，训完自动 merge 全部五点） |
 | N1 | **Qwen3-VL-8B-Instruct base 全量 eval（9-bench）** | 模型已在缓存 ✅（`cache/hub/models--Qwen--Qwen3-VL-8B-Instruct`，17G 完整）；1 GPU，套 X 系列模板，`MODEL_NAME=vanilla_qwen3vl8b` | ⏳ 待 mlx（2026-07-17 22:0x 用户新增：扩底座矩阵到 8B；base 行与终局配置无关可先跑；官方 Vision-OPD 论文有 8B 行可对照 V* 84.82/HR4K 79.63/HR8K 75.25）。**✅ [mlx session 07-19 22:0x] 已提交**：job_id `72573ac987158741` |
 | N2 | **Qwen3.5-2B 下载 + base eval** | 模型存在（HF `Qwen/Qwen3.5-2B`，2026-03 发布）但**本地无缓存**——需某台有 7890 代理的机器手动下载进共享 `cache/`（参考 math suite 数据集的下载做法），然后 base 9-bench（conda qwen35 env，transformers 5.5 支持 qwen3_5 架构） | ✅ **301832790 基本完成（07-18 15:1x）**：模型已入共享缓存 `cache/Qwen3.5-2B`（4.3G）✅；**ours 训练完成**（8卡 fresh，step30/60/90 已 merge，`...-Qwen3.5-2B-virl39k-filtered-90step-trial301783374`——⚠️ 4卡版三次 OOM 于 step41 的 66GB 巨型分配，半成品目录 `-4gpu-partial-DISCARD`；**contrast 路径在 Qwen3.5-2B 架构确认可用**）。baseline：ZoomBench **43.91** ✅；9-bench 已出 BLINK 60.55/MMStar 67.20/MMBench 75.77/V* 80.63/MathVista 74.90，**baseline 10 项全齐（07-18 17:0x）**：+HR8K 72.88(重跑0失败)/HR4K 74.00/Hallu三均 49.96/POPE 91.89(手算 exact-match——脚本判分对该 run 输出 0 的 bug，预测干净)。ours step90 eval 待 mlx（`contrast_std_qwen35_2b_virl39k_step90`，qwen35 shim，POPE 请同用手算口径） |
 | N3(并入 FINAL-WAVE) | **8B + Qwen3.5-2B 的 OPSD/ours 训练** | 等终局配置锁定后并入 FINAL-WAVE：底座矩阵扩为 Qwen3-VL{2B,4B,8B} + Qwen3.5{2B,4B} = 5 底座 × (OPSD+ours)。⚠️ 8B 全词表蒸馏显存预估比 4B 更紧——len 直接从 4096 起步，OOM 再降 rollout 池（T3b 套路）；单 run 预估 5-6h/8卡。Qwen3.5-2B 走 conda env | 🏃 **301829143 认领并挂链（07-18 16:57）**——盘点后矩阵实际只缺 3 格（其余 7 格已有产物：2B/4B/8B/Qwen3.5-4B 的 ours-final 全齐，2B/4B/Qwen3.5-4B 的 OPSD 全齐）。FA3/FA4 完毕后自动串行（driver `logs/n3_driver_trial301829143.log`，每段独立失败不阻塞后段）：**N3a=8B OPSD**（answer-hint×unfiltered@4096，4B OPSD 同口径）→ **N3b=Qwen3.5-2B ours-final**（uniform×unfiltered@4096，conda，同 P12/P28 口径）→ **N3c=Qwen3.5-2B OPSD**（answer-hint×unfiltered@6144，conda，同 P25 口径），各 90步/bs32/8卡，自动 merge 30/60/90 + 双跑保护。ckpt名 `Vision-OPD-{baseline,contrast-standard-uniformweight}-{Qwen3-VL-8B,Qwen3.5-2B}-virl39k-UNFILTERED1img-90step-trial301829143`。预计 FA4 完（~21:40）后接，三段 ~8h，明晨全清。⚠️ N2 已训的 `...-Qwen3.5-2B-virl39k-filtered-90step-trial301783374` 是带权重×filtered 口径，非终局配置，不与 N3b 重复。**✅ N3 全链完成（07-19 04:52）**：N3a(8B OPSD 07-18 23:31)/N3b(Qwen3.5-2B ours 07-19 02:24)/N3c(Qwen3.5-2B OPSD 07-19 04:50) 三格全部 90/90 训完+merge+prune，零 merge 失败。**5 底座 × (ours-final + OPSD) 终局矩阵训练侧 100% 收口，10 格全齐，eval 待 mlx**：ckpt名 `Vision-OPD-baseline-Qwen3-VL-8B-...`、`Vision-OPD-contrast-standard-uniformweight-Qwen3.5-2B-...`、`Vision-OPD-baseline-Qwen3.5-2B-...`（均 `-UNFILTERED1img-90step-trial301829143`）。**✅ [mlx session 07-19 22:0x] N3a/N3b/N3c 全部已提交**（Qwen3.5 tokenizer 缺 `extra_special_tokens` 字段已修）：N3a=`34afaab5d568b4f2`、N3b=`d7aa09c5347f6d51`（qwen35 shim+conda）、N3c=`cc89ca88b946d0b8`（qwen35 shim+conda） |
@@ -1229,7 +1331,7 @@ MODEL_SIZE=2B CUDA_VISIBLE_DEVICES=<4卡> TRAINER_N_GPUS_PER_NODE=4 \
   > logs/p14_noeosexempt_$(date +%Y%m%d_%H%M%S).log 2>&1 &
 ```
 认领启动后把本行改 🏃 |
-| P17 | **seed-variance 复跑：contrast-标准 × virl39k，2B，90步，`data.seed=1234`** | 与主表 ours 行（70.68）唯一差异 = 数据顺序种子；产出 run-to-run variance 的干净测量点 | ✅ **完成（07-17 10:13，301761390，90/90，step30/60/90 已 merge，X16 待评）**（driver `scripts/run_p17_seed_variance_after_p14p8_301761390.sh`），ckpt名 `Vision-OPD-contrast-standard-seed1234-Qwen3-VL-2B-virl39k-90step-trial301761390`，自动 merge 30/60/90，预计 ~08:00 启动、~10:00 出 step90。**seed 布线验证（07-17 代码追踪 + Codex 独立复核 4/4 CONFIRMED）**：① `data.seed` → `main_ppo.py:470-475` `torch.Generator().manual_seed` → `RandomSampler` → 训练数据顺序，**确认生效**；② ⚠️ 重要发现：`data.seed=null`（历史所有 run）时 `torch.Generator()` 的默认 initial_seed 是**固定值 67280421310721** ⇒ 历史所有 run 数据顺序完全相同，本实验是第一个真正改变数据顺序的 run；③ rollout vLLM 引擎 seed 恒为 0（`RolloutConfig` 无 seed 字段，`vllm_async_server.py:320` `get("seed",0)` 兜底），不改代码无法覆盖——无碍，数据顺序一变权重轨迹从 step1 分叉；④ 推论：此前 T3b 双跑、MathVista 67.0 vs 69.2 这类"同配置不同结果"的差异来源**不是数据顺序**（顺序相同），而是 GPU 非确定性/vLLM 调度——P17 测的是 seed+非确定性的总 variance，与 X7 seedA/B（纯非确定性）互补。**Codex 复核补充**：`+actor_rollout_ref.rollout.seed=` 会直接 crash（RolloutConfig 构造器拒绝未知参数，非静默丢弃）；curriculum sampler 默认 class_path=null 不影响 seeded RandomSampler；⚠️ **resume 会恢复 dataloader 状态、data.seed 对 resumed run 无效**——P17 若中途挂掉不能带 seed 从 ckpt resume 换序，只能整段重跑（fresh run only） |
+| P17 | **seed-variance 复跑：contrast-标准 × virl39k，2B，90步，`data.seed=1234`** | 与主表 ours 行（70.68）唯一差异 = 数据顺序种子；产出 run-to-run variance 的干净测量点 | ✅ **完成（07-17 10:13，301761390，90/90，step30/60/90 已 merge，X16 待评）**（driver `experiment_script/run_p17_seed_variance_after_p14p8_301761390.sh`），ckpt名 `Vision-OPD-contrast-standard-seed1234-Qwen3-VL-2B-virl39k-90step-trial301761390`，自动 merge 30/60/90，预计 ~08:00 启动、~10:00 出 step90。**seed 布线验证（07-17 代码追踪 + Codex 独立复核 4/4 CONFIRMED）**：① `data.seed` → `main_ppo.py:470-475` `torch.Generator().manual_seed` → `RandomSampler` → 训练数据顺序，**确认生效**；② ⚠️ 重要发现：`data.seed=null`（历史所有 run）时 `torch.Generator()` 的默认 initial_seed 是**固定值 67280421310721** ⇒ 历史所有 run 数据顺序完全相同，本实验是第一个真正改变数据顺序的 run；③ rollout vLLM 引擎 seed 恒为 0（`RolloutConfig` 无 seed 字段，`vllm_async_server.py:320` `get("seed",0)` 兜底），不改代码无法覆盖——无碍，数据顺序一变权重轨迹从 step1 分叉；④ 推论：此前 T3b 双跑、MathVista 67.0 vs 69.2 这类"同配置不同结果"的差异来源**不是数据顺序**（顺序相同），而是 GPU 非确定性/vLLM 调度——P17 测的是 seed+非确定性的总 variance，与 X7 seedA/B（纯非确定性）互补。**Codex 复核补充**：`+actor_rollout_ref.rollout.seed=` 会直接 crash（RolloutConfig 构造器拒绝未知参数，非静默丢弃）；curriculum sampler 默认 class_path=null 不影响 seeded RandomSampler；⚠️ **resume 会恢复 dataloader 状态、data.seed 对 resumed run 无效**——P17 若中途挂掉不能带 seed 从 ckpt resume 换序，只能整段重跑（fresh run only） |
 | （提醒） | 正在跑的勿重复认领：P5/P6=301761390，P7/P10+T3b=301832790，P3=301829143 | | |
 
 **决策规则（写给 paper 侧）**：P11/P12 出数后三点对照（2B/4B/Qwen3.5 的 uniform vs ours）——
@@ -1787,7 +1889,7 @@ list 坑（301761390 merge，规律第 5 次验证），已修复并重交 `668a
   **Qwen3.5 的 248K 大词表 × 全词表蒸馏，`MAX_PROMPT_LENGTH=6144` 在 virl39k 上也扛不住**（6144 是
   Qwen3-VL 时代的经验值，Qwen3.5 词表大 63%）。**新规则：Qwen3.5 上所有 contrast/RA-VAD 任务一律用 4096**
   （非蒸馏类 baseline/GRPO 不受影响，6144 没问题——task4/5 已验证）
-- 修复 driver `scripts/run_t3ab_fix_after_t6b_301761390.sh` 已启动：等 T6b（正在跑，~4h）结束 →
+- 修复 driver `experiment_script/run_t3ab_fix_after_t6b_301761390.sh` 已启动：等 T6b（正在跑，~4h）结束 →
   先跑上面的判别 eval（1卡30分钟）→ T3a 重跑@4096（干净重来）→ T3b 重跑@4096（丢弃 6144 版的 step10 残留）
 - T6b（conservative×sr1@4096）正常训练中，已过10分钟存活检查
 
@@ -2064,7 +2166,7 @@ HR8K 70.50 → **7-bench 68.31**；POPE 88.98 / Hallu3均 50.86 / **ZoomBench 41
 **本机认领（冒烟通过为前提）**：
 - **T3b：contrast-保守×virl39k(90步)** → `Vision-OPD-contrast-conservative-Qwen3.5-4B-virl39k-filtered-90step-trial301783374`
 - **T6b：contrast-保守×sr1(90步, len4096)** → `Vision-OPD-contrast-conservative-Qwen3.5-4B-sr1-filtered-90step-trial301783374`
-- driver：`scripts/run_after_geo3k_qwen35_t3b_t6b.sh`（已启动，日志 `logs/after_geo3k_driver.log`）；
+- driver：`experiment_script/run_after_geo3k_qwen35_t3b_t6b.sh`（已启动，日志 `logs/after_geo3k_driver.log`）；
   顺序 = 等geo3k → merge geo3k std/cons → 冒烟 → 等本机 reverse-KL 完 → T3b → T6b（8卡串行，checkpoint 产物校验）。
   冒烟失败会在 driver 日志里明确记录并放弃认领（届时 T3b/T6b 退回给你们，请再更新本条）。
 
@@ -2135,7 +2237,7 @@ Qwen3.5 行：base ✅(A1)、OPSD 缺 eval(E7)、ours 等 T3a。
 
 | # | 任务 | 配置 | 状态 |
 |---|---|---|---|
-| P5 | **4B contrast-标准 × virl39k，90步** | 同 2B 90step 配方，MODEL_SIZE=4B，`MAX_PROMPT_LENGTH=6144`（OOM 则降 4096 并记录）；save_freq=10 留 step30/60/90 | 🏃 **301761390 已认领并启动（07-17 00:56，8卡，len6144）**，ckpt名 `Vision-OPD-contrast-standard-Qwen3-VL-4B-virl39k-filtered-90step-trial301761390`；driver 已换 `scripts/run_p5_p6_only_301761390.sh`（OOM 自动降 4096 重试，跑完自动 merge 30/60/90，后接 P6；P7/P10 段已剥离转交 301829143）。**📏 len 实测回复（07-17 02:30，应 P11 行之问）：P5 在 len6144 稳定训练中（step55/90，日志零 OOM）**——与 P11@6144 step0 OOM 形成对照，差异疑因 uniform-weight 全 token 参与 KL 而 ours 的 w_t 稀疏化了有效 token；P11/P5 对比时须标注 len 口径（P11=4096, P5=6144） |
+| P5 | **4B contrast-标准 × virl39k，90步** | 同 2B 90step 配方，MODEL_SIZE=4B，`MAX_PROMPT_LENGTH=6144`（OOM 则降 4096 并记录）；save_freq=10 留 step30/60/90 | 🏃 **301761390 已认领并启动（07-17 00:56，8卡，len6144）**，ckpt名 `Vision-OPD-contrast-standard-Qwen3-VL-4B-virl39k-filtered-90step-trial301761390`；driver 已换 `experiment_script/run_p5_p6_only_301761390.sh`（OOM 自动降 4096 重试，跑完自动 merge 30/60/90，后接 P6；P7/P10 段已剥离转交 301829143）。**📏 len 实测回复（07-17 02:30，应 P11 行之问）：P5 在 len6144 稳定训练中（step55/90，日志零 OOM）**——与 P11@6144 step0 OOM 形成对照，差异疑因 uniform-weight 全 token 参与 KL 而 ours 的 w_t 稀疏化了有效 token；P11/P5 对比时须标注 len 口径（P11=4096, P5=6144） |
 | P6 | **4B answer-hint × virl39k，90步** | 同 P1 配方换 4B | 🏃 **301761390 已认领（同上 driver，P5 完成后自动接跑，8卡）**，ckpt名 `Vision-OPD-baseline-Qwen3-VL-4B-virl39k-filtered-90step-trial301761390` |
 | P7 | **α 解耦：α=0.5 无 gate，2B × virl39k 90步** | contrast-标准配置只改 `ra_contrast_alpha=0.5`（gate 关）——现有"保守"是 α+gate 耦合，不能当 α 消融 | ✅ **完成（07-17 03:35，301832790）**，step30/60/90 已 merge，待评（X3）——ckpt名 `Vision-OPD-contrast-alpha05-nogate-Qwen3-VL-2B-virl39k-90step-trial301783374`。**⚠️ 301829143 不要再跑 P7/P10**（01:0x 的转交作废——当时基于 step0 即死的旧信息；请从 `run_p7_p10_generic.sh` 链里剥掉这两段，直接进 P11 链）。（P7 是解锁 paper α/gating 小节的唯一钥匙） ~~🏃 301829143 已接（07-17 01:02）~~ → **✋ 301829143 已让出（07-17 01:3x，按本文档去重协调）**：本机的 P7/P10 在 01:22 启动、才跑几分钟即被停（step0，无 checkpoint 产物，`-trial301829143` 空目录无残留），**归 301832790 跑完**。本机改接 P3+E9（见对应行）|
 | P8(可选) | α=2.0 无 gate，2B × virl39k 90步 | 同上改 2.0，α 曲线第三点 | 💤 待定 |
@@ -2143,7 +2245,7 @@ Qwen3.5 行：base ✅(A1)、OPSD 缺 eval(E7)、ours 等 T3a。
 | E7 | Qwen3.5 answer-hint×virl39k eval（9-bench） | ckpt=`Vision-OPD-baseline-Qwen3.5-4B-virl39k-filtered-trial301761390`；**先查 prune 后 step90 存档是否还在**，在则用 step90 对齐口径，否则 step145+标注 | ⏳ 未认领 |
 | E8 | P5/P6/P7 产物 eval（9-bench，无 Zoom；各 step30/60/90 三点喂 accuracy curve） | 同 E1 模板去掉 Zoom | ⏳ 未认领 |
 | V1 | **decoding 可视化**：逐位置 decode target 分布（top-k of softmax(log p_hi + α(log p_hi−log p_ctrl))）vs p_hi argmax vs 实际 token + w_t 热图；另挑 base 幻觉/ours 修正 qualitative 案例 | 参考 `scripts/precheck_contrast_target.py`；1 GPU | ✅ **首版完成（2026-07-16 22:58，mlx job 54736c44eacea1b5，1×B200）**：`analysis_outputs/target_decoding_vis/report_alpha1.0_beta0.1_black.md`（12 样本，脚本 `scripts/visualize_target_decoding.py`）。观察：短 answer-only 回答 tilt 改变 argmax 0%，长 CoT 回答 1-24%（集中在答案数字/视觉内容位）。已知小 bug：Question 列为空（列名不对），后续修 |
-| P9 | **contrast-标准 × UNFILTERED virl39k（单图 36,039/38,327），2B，90步** | 用户要求的 filter 敏感性检查。新 parquet=`data/virl39k_train_noimg_unfiltered_1img.parquet`（已建好，2,288 条多图剔除=OOM 硬约束，其余全保留）；配置同主表 ours（6144/filter_overlong/bs32/90步）；wrapper 可直接用 `scripts/run_p9_contrast_std_unfiltered_virl39k_90step.sh`（自带 unset proxy，`TRAINER_N_GPUS_PER_NODE=8` 按机器改，EXPERIMENT_NAME 里 `-mlxjob` 后缀请改成 `-trial<你的trialid>`） | ✅ **301829143 认领，07-16 23:2x 已启动**（8卡，P1/P2 同款校验 driver，跑完自动 merge 30/60/90；driver 日志 `logs/p9_driver_trial301829143.log`）→ `Vision-OPD-contrast-standard-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301829143`。⚠️ 此前 devbox 误提交的 mlx job `a343dc93baa6cc38` **作废，需用户在 web UI 手动停止**（无 CLI kill，如果它真跑起来会写到 `-mlxjob` 后缀的另一个目录，不会和本机撞名）；更早的 `d1b4d0b296724ee2` 是 status6 被拒未启动、无需处理。跑完接 E9 |
+| P9 | **contrast-标准 × UNFILTERED virl39k（单图 36,039/38,327），2B，90步** | 用户要求的 filter 敏感性检查。新 parquet=`data/virl39k_train_noimg_unfiltered_1img.parquet`（已建好，2,288 条多图剔除=OOM 硬约束，其余全保留）；配置同主表 ours（6144/filter_overlong/bs32/90步）；wrapper 可直接用 `experiment_script/run_p9_contrast_std_unfiltered_virl39k_90step.sh`（自带 unset proxy，`TRAINER_N_GPUS_PER_NODE=8` 按机器改，EXPERIMENT_NAME 里 `-mlxjob` 后缀请改成 `-trial<你的trialid>`） | ✅ **301829143 认领，07-16 23:2x 已启动**（8卡，P1/P2 同款校验 driver，跑完自动 merge 30/60/90；driver 日志 `logs/p9_driver_trial301829143.log`）→ `Vision-OPD-contrast-standard-Qwen3-VL-2B-virl39k-UNFILTERED1img-90step-trial301829143`。⚠️ 此前 devbox 误提交的 mlx job `a343dc93baa6cc38` **作废，需用户在 web UI 手动停止**（无 CLI kill，如果它真跑起来会写到 `-mlxjob` 后缀的另一个目录，不会和本机撞名）；更早的 `d1b4d0b296724ee2` 是 status6 被拒未启动、无需处理。跑完接 E9 |
 | M1 | **motivation 定量**：base 真图 vs 黑图答案不变比例（"model ignores visual evidence"硬数字） | 1 GPU，POPE/VStar 子集推理；可仿 V1 的做法走 mlx 1×B200（模板 `mlx_config_1gpu.yaml`，wrapper 脚本自带 unset proxy） | 📢 **建议走 mlx（07-17 18:0x 分配；1×B200 模板现成）**（原计划 devbox session 做，已改分工：devbox 只管 paper/盘缺口/更新本文档，执行类任务全部由其他 device/session 认领） |
 | V1-b | V1 后续：修 Question 列空 bug（问题在 parquet `prompt` 列里）；换 merged step30/60 checkpoint 做 teacher 再跑一版（看训练中期 target 形态）；从报告挑 2-3 个 qualitative 案例进论文附录 | 脚本 `scripts/visualize_target_decoding.py` 已就绪，1 GPU | ⏳ 未认领（挑案例这步 devbox 可做，跑 GPU 的部分待认领） |
 | E9 | P9 产物（unfiltered-1img 90step）9-bench eval | 同 E1 模板 | ✅ **完成（07-17 04:0x，最终 Run Summary 全部 infer_fail 0.00%）**：BLINK 57.23 / MMStar 63.27 / MMBench 77.66 / VStar 80.10 / MathVista 65.9 / HR4K 77.875 / HR8K 72.75 / POPE 88.57 / Hallusion 70.03（`64b654e66809caa7`，reuse 了此前已完成的 5 个数据集推理）。**对照 filtered 主表行（58.18/63.87/78.18/76.44/67.0/76.63/—/88.98/68.56）：基本 ±1pp 持平，VStar +3.7 反升——filter 敏感性检查结论：过滤与否对下游分数影响很小**，filter 不是主表成绩的关键因素 |
@@ -2206,7 +2308,7 @@ benchmark直接跑挂，很容易被误判成"模型/judge有问题"而不是"�
 
 - **GPU0-3**：qtext训练（`Vision-OPD-contrast-standard-qtext-Qwen3-VL-2B-Instruct`）44/62步（71%），还剩约5小时
 - **GPU4/5/6**：保守×sr1-90step 的 step30/60/90 评测中（9-benchmark，进行到BLINK+MMStar，还有7项benchmark要跑，预计还要较久）
-- **GPU7**：math suite（`std_virl39k-90step-step90` + `Qwen3-VL-2B-Instruct base` 在 WeMath/MathVista_MINI/MathVerse_MINI/MMMU_DEV_VAL/OCRBench 上的acc）——**第一次尝试两个都没跑全**：WeMath/MathVerse/MMMU/OCRBench 因为没有代理走 `curl -k -x http://127.0.0.1:7890 -L` 手动下载导致下载失败跳过（只有MathVista_MINI跑出70.68/69.20，见下）；base模型那次还撞上了vLLM默认端口8222占用直接整批失败。**已修复重跑**：4个数据集手动下载进共享`cache/LMUData`缓存（其他机器/以后的session也能直接用，不用再下）+ 两个模型分别用独立端口(18761/18762)，`scripts/run_math_suite_gpu7_retry.sh` 已启动。
+- **GPU7**：math suite（`std_virl39k-90step-step90` + `Qwen3-VL-2B-Instruct base` 在 WeMath/MathVista_MINI/MathVerse_MINI/MMMU_DEV_VAL/OCRBench 上的acc）——**第一次尝试两个都没跑全**：WeMath/MathVerse/MMMU/OCRBench 因为没有代理走 `curl -k -x http://127.0.0.1:7890 -L` 手动下载导致下载失败跳过（只有MathVista_MINI跑出70.68/69.20，见下）；base模型那次还撞上了vLLM默认端口8222占用直接整批失败。**已修复重跑**：4个数据集手动下载进共享`cache/LMUData`缓存（其他机器/以后的session也能直接用，不用再下）+ 两个模型分别用独立端口(18761/18762)，`experiment_script/run_math_suite_gpu7_retry.sh` 已启动。
 
 **已知结果**（math suite 第一次尝试里唯一跑出来的）：`contrast-标准×virl39k-90step-step90` 的 MathVista_MINI = **69.20**（比报告表里t=0默认配置跑出的67.00高2.2pp，采样seed不同导致，同样config理论应该一致——待确认是否用了不同seed/参数）。
 
@@ -2230,7 +2332,7 @@ Qwen3.5 环境）能接——301783374/301638440 是 Qwen3-VL 环境跑不了。
 | 任务6b：contrast-保守×sr1(90步) | ⏳ 没开始 | **T6b**：同上，**用 `MAX_PROMPT_LENGTH=4096`**（sr1 在 Qwen3.5 上 6144 必 OOM，本机 task6a 已踩过） |
 | 任务1：Qwen3.5-4B vanilla 评测 | 部分已有结果 | 暂不接，等训练队列消化完再看缺什么 |
 
-**接手 driver 已启动**：`scripts/run_takeover_301683547_after_task6a.sh`（日志
+**接手 driver 已启动**：`experiment_script/run_takeover_301683547_after_task6a.sh`（日志
 `logs/takeover_301683547_driver.log`）。吸收了两台机器踩过的全部坑：每段用 **checkpoint 产物**校验成败
 （不信进程退出码）、启动后 10 分钟存活检查（防秒挂静默跳段）、段间等 GPU 显存真正回落（防显存释放竞态）、
 每段开跑前查"是否已在别处完成"（防重复训练）。顺序：task6a 收尾 → T1(resume) → T2(GRPO，最短) →
@@ -2289,7 +2391,7 @@ transformers 5.5.0 装在 user-local。其他脚本（`run_vision_opd_ra_vad.sh`
 所以没事。**修法：跑 GRPO 时显式传 `PYTHONNOUSERSITE=0`**（没改脚本默认值——那个默认值在
 Qwen3-VL 机器上可能是防 user-local 污染的有意设计，只在 Qwen3.5 机器上覆盖）。
 
-**已排好自动重试**：`scripts/run_task5_retry_after_task6a_301761390.sh`（日志
+**已排好自动重试**：`experiment_script/run_task5_retry_after_task6a_301761390.sh`（日志
 `logs/task5_retry_driver_301761390.log`）等任务6a 跑完（到 step90 或进程消失）→ 补 merge 任务6a 的
 30/60/90（主 driver 的这部分逻辑已经跑过头了，由重试 driver 代劳）→ 带 `PYTHONNOUSERSITE=0` 重新启动
 任务5 → 启动后 10 分钟内做存活校验（防再次秒挂无人发现）→ 跑完自动 merge+prune。
@@ -2546,7 +2648,7 @@ bash scripts/run_zoombench_canonical.sh \
 5+ 小时，而且跑完之后也是一个有用的数据点——本仓库数据上的 Qwen3.5-4B baseline，可以跟已有的 visionopd
 结果配对比较），完成后立刻 merge+prune，然后按顺序开始新分配的 任务4 → 任务5 → 任务6a。
 
-**已经不需要人盯着了**：写了个自动接力 driver（`scripts/run_task456_after_baseline_301761390.sh`，
+**已经不需要人盯着了**：写了个自动接力 driver（`experiment_script/run_task456_after_baseline_301761390.sh`，
 后台日志 `logs/task456_301761390_driver.log`），轮询当前 baseline 的 pid，跑完后自动
 merge+prune（`FORCE=1`，避免脚本默认的交互确认卡死无人值守流程）→ 依次启动 任务4(8卡,
 `ANSWER_VAL_TRAIN_FILE=virl39k_train_noimg_filtered_1img.parquet`, `MAX_PROMPT_LENGTH=6144`,
@@ -2606,17 +2708,17 @@ merge+prune（`FORCE=1`，避免脚本默认的交互确认卡死无人值守流
 
 **[2026-07-14 用户要求：把本机(301783374)剩下的 Qwen3-VL 实验/评测都跑了]** 核实后发现两项遗留工作，grpo-3ep(还剩约280步，预计~3小时)跑完后自动接力，都已 nohup 后台排好：
 
-1. **`scripts/run_qwen3vl_cleanup_after_grpo3ep.sh`**（driver日志 `logs/qwen3vl_cleanup_driver_301783374.log`）：
+1. **`experiment_script/run_qwen3vl_cleanup_after_grpo3ep.sh`**（driver日志 `logs/qwen3vl_cleanup_driver_301783374.log`）：
    - 标准×virl39k-90step 的 `global_step_30` 之前 merge 是半成品（有 `model.safetensors` 但没 `config.json`，怀疑是 301638440 死之前merge没跑完），重新merge+评测（GPU0）。（step60/task2-sr1-437-step140 都已经有完整评测结果了，不需要再跑）
    - 保守×sr1-90step 这个实验其实从来没成功训练过（301638440 死之前的 retry3 重跑没能接上，一直没有checkpoint），从头训练（`MAX_PROMPT_LENGTH=4096`，GPU0-3，90步），完成后 merge+评测 step30/60/90。
-2. **`scripts/run_native_vs_vlmevalkit_compare.sh`**（driver日志 `logs/native_compare_driver_301783374.log`）：应用户要求，对比 Vision-OPD 原生eval(`infer.py`→`judge_qwenlm.py`→`cal_acc.py`) vs VLMEvalKit 在同一个checkpoint上的分数差异（用户反馈"这两个好像数值差得比较大"）。固定用 **GPU4**（避开上面那个脚本用的GPU0-3，两个脚本会同时段跑但不撞卡），跑 `Vision-OPD-contrast-standard-Qwen3-VL-2B-Instruct/global_step_62` 这个已知VLMEvalKit分数的checkpoint（vstar 76.96 / hrbench-4k 77.62 / hrbench-8k 73.75，来自 `docs/compare_vaopd_0701.md`），走原生eval流程对比同样这三个benchmark，结果会写到 `logs/native_compare_acc_*.log`。
-3. **`scripts/run_vlmevalkit_native_setting_eval.sh`**（driver日志 `logs/vlmevalkit_native_setting_driver_301783374.log`）：第三组对照——用**原生eval的采样配置跑VLMEvalKit server模式**（`MAX_NEW_TOKENS=8192`+`PRESENCE_PENALTY=0`，对应原生 infer.py 的 max_tokens=8192/无presence_penalty；VLMEvalKit默认是4096+1.5）。同checkpoint同3个benchmark。用户怀疑的是"length太短"（4096截断）导致分差，这三组数字可以把"length/采样参数差异"和"评测栈其他差异（judge、图片resize等）"分开归因：如果 8192+pp0 的VLMEvalKit分数明显偏向原生eval的数字，说明主要是采样配置问题；如果基本不动，差异来自评测栈本身。
+2. **`experiment_script/run_native_vs_vlmevalkit_compare.sh`**（driver日志 `logs/native_compare_driver_301783374.log`）：应用户要求，对比 Vision-OPD 原生eval(`infer.py`→`judge_qwenlm.py`→`cal_acc.py`) vs VLMEvalKit 在同一个checkpoint上的分数差异（用户反馈"这两个好像数值差得比较大"）。固定用 **GPU4**（避开上面那个脚本用的GPU0-3，两个脚本会同时段跑但不撞卡），跑 `Vision-OPD-contrast-standard-Qwen3-VL-2B-Instruct/global_step_62` 这个已知VLMEvalKit分数的checkpoint（vstar 76.96 / hrbench-4k 77.62 / hrbench-8k 73.75，来自 `docs/compare_vaopd_0701.md`），走原生eval流程对比同样这三个benchmark，结果会写到 `logs/native_compare_acc_*.log`。
+3. **`experiment_script/run_vlmevalkit_native_setting_eval.sh`**（driver日志 `logs/vlmevalkit_native_setting_driver_301783374.log`）：第三组对照——用**原生eval的采样配置跑VLMEvalKit server模式**（`MAX_NEW_TOKENS=8192`+`PRESENCE_PENALTY=0`，对应原生 infer.py 的 max_tokens=8192/无presence_penalty；VLMEvalKit默认是4096+1.5）。同checkpoint同3个benchmark。用户怀疑的是"length太短"（4096截断）导致分差，这三组数字可以把"length/采样参数差异"和"评测栈其他差异（judge、图片resize等）"分开归因：如果 8192+pp0 的VLMEvalKit分数明显偏向原生eval的数字，说明主要是采样配置问题；如果基本不动，差异来自评测栈本身。
 
 **[用户要求调整顺序]** GPU4 上这两组对照的执行顺序改为：**先跑第3项（VLMEvalKit×原生配置），再跑第2项（原生eval）**——第3项等 grpo-3ep 结束直接启动，第2项等第3项的脚本退出后自动接。两个 driver 都已按新顺序重启。
 
-**[用户追加] 标准×virl39k-90step step30/60 的完整评测**（`scripts/run_std_virl39k_3060_full_eval.sh`，driver日志 `logs/std_virl39k_3060_full_eval_driver_301783374.log`）：step30/60 两个checkpoint 都已提前merge完成（step30 之前是半成品已修复；step60 重新merge了一遍），等 grpo-3ep 结束后 **GPU5跑step30、GPU6跑step60 并行**，每个先跑 9-benchmark（`eval_via_vllm_server.sh`）再接 ZoomBench canonical（端口8010/8011）。原cleanup脚本里重复的step30部分已删除。
+**[用户追加] 标准×virl39k-90step step30/60 的完整评测**（`experiment_script/run_std_virl39k_3060_full_eval.sh`，driver日志 `logs/std_virl39k_3060_full_eval_driver_301783374.log`）：step30/60 两个checkpoint 都已提前merge完成（step30 之前是半成品已修复；step60 重新merge了一遍），等 grpo-3ep 结束后 **GPU5跑step30、GPU6跑step60 并行**，每个先跑 9-benchmark（`eval_via_vllm_server.sh`）再接 ZoomBench canonical（端口8010/8011）。原cleanup脚本里重复的step30部分已删除。
 
-**本机(301783374) grpo-3ep 结束后的 GPU 分配总览**：GPU0-3=保守×sr1-90step训练→之后GPU0评测30/60/90；GPU4=VLMEvalKit×原生配置(8192+pp0)→原生eval对比；GPU5=std_virl39k step30 (9bench+ZoomBench)；GPU6=std_virl39k step60 (9bench+ZoomBench)；**GPU7=grpo-3ep 最终checkpoint 的 merge+9-benchmark+ZoomBench canonical**（`scripts/run_grpo3ep_eval_after_training.sh`，用户指出之前漏排了；对照组是1ep版step464：7-bench 71.66 / ZoomBench 38.34）。
+**本机(301783374) grpo-3ep 结束后的 GPU 分配总览**：GPU0-3=保守×sr1-90step训练→之后GPU0评测30/60/90；GPU4=VLMEvalKit×原生配置(8192+pp0)→原生eval对比；GPU5=std_virl39k step30 (9bench+ZoomBench)；GPU6=std_virl39k step60 (9bench+ZoomBench)；**GPU7=grpo-3ep 最终checkpoint 的 merge+9-benchmark+ZoomBench canonical**（`experiment_script/run_grpo3ep_eval_after_training.sh`，用户指出之前漏排了；对照组是1ep版step464：7-bench 71.66 / ZoomBench 38.34）。
 
 **[2026-07-15 04:4x 夜间下游链条三重故障 + 大重启（trial 301783374）]** grpo-3ep 训练完成(1392/1392)后，排队的下游任务几乎全灭，三个独立根因：
 1. **本机缺 `tensorboard`** → 保守×sr1 和 qtext 两个训练秒崩（每台新机器都要装一遍，301638440 踩过一模一样的坑）；
@@ -2624,7 +2726,7 @@ merge+prune（`FORCE=1`，避免脚本默认的交互确认卡死无人值守流
 3. **两个并行脚本都用了端口 8010** → vLLM server 撞车，native-compare 的 hrbench-8k 558/800 条 404（数字23.12%作废）。
 **幸存的真实结果**：全部 ZoomBench canonical（原生管线不依赖那些包）——grpo-3ep step1392 = **41.18%**(vs 1ep版38.34)、std_virl39k step60=41.66、cons_virl39k 30/60/90=40.36/41.89/41.18、std_sr1 30/60/90=42.84/42.25/41.66（std30 的 26.27% 疑似撞车污染，已排重跑）；native compare 的 vstar=80.10 / hrbench-4k=78.38（vs VLMEvalKit 76.96/77.62，原生管线略高 +0.8~3.1pp）。
 **判分侧额外发现**：本机 judge 的 Azure 端点是内网地址，需要 `unset` 全部代理直连（全局代理指向的本地转发进程在这台机器上不存在）；judge 结果文件存在时会被静默复用，重判前必须先删旧文件。
-**修复**：装齐依赖（tensorboard/termcolor/num2words/hf_transfer/litellm/socksio/openpyxl）、uniform-weight checkpoint 的 tokenizer 按坑#7 从同基座覆盖、所有 vLLM 端口改为全局唯一（8042-8053）。**全部失败项已通过 `scripts/run_relaunch_20260715.sh` 重启**（5条泳道：GPU0-3 两个训练串行+评测、GPU4 native-setting对照+8k重推+std_sr1 评测、GPU5 API失败重跑链+uniform ZoomBench、GPU6 grpo3ep/std30/60 评测+std30 ZoomBench重跑、GPU7 cons_virl39k 评测），已确认5条泳道全部启动。
+**修复**：装齐依赖（tensorboard/termcolor/num2words/hf_transfer/litellm/socksio/openpyxl）、uniform-weight checkpoint 的 tokenizer 按坑#7 从同基座覆盖、所有 vLLM 端口改为全局唯一（8042-8053）。**全部失败项已通过 `experiment_script/run_relaunch_20260715.sh` 重启**（5条泳道：GPU0-3 两个训练串行+评测、GPU4 native-setting对照+8k重推+std_sr1 评测、GPU5 API失败重跑链+uniform ZoomBench、GPU6 grpo3ep/std30/60 评测+std30 ZoomBench重跑、GPU7 cons_virl39k 评测），已确认5条泳道全部启动。
 **教训**：(a) 并行 vLLM 任务的端口必须集中分配不能复用；(b) 新机器上第一次跑训练/评测前先补装依赖清单；(c) driver "完成"消息不可信，必须查输出文件尺寸/内容。
 
 **[2026-07-15 评测完整性扫描结果 + 登记文件（所有机器都要看）]** 扫描了全部 668 个已有评测输出（`normal_scoring/*_normal.xlsx`），发现 **13 个被 "Failed to obtain answer via API."（vLLM推理请求失败，全部计错）污染**，几乎全部集中在 HRBench4K/8K（高分辨率大图 → 请求超时/失败率高）。完整清单+判定标准在 **`docs/eval_integrity_registry.md`**（❌段落排最前，引用任何数字前先查这个文件；增量重扫跑 `python3 scripts/scan_eval_integrity.py`，不占GPU）。影响最大的几个（剔除失败条数后的估算修正）：
@@ -2634,9 +2736,9 @@ merge+prune（`FORCE=1`，避免脚本默认的交互确认卡死无人值守流
 - 一个已标记 CORRUPTED 的目录（sr1filtered_step200 端口冲突那次，BLINK 871/1901失败）——旧案，已知。
 **教训已写进登记文件**：HRBench 系列大图评测容易出现零星API失败，以后跑完评测顺手跑一遍扫描脚本再引用数字。
 
-**[重跑安排（2026-07-15，trial 301783374）]** 值得修的污染项已全部排进本机 GPU5 泳道（`scripts/run_api_failure_reruns.sh`，接在 uniform-weight HRBench8K 重跑之后串行）：contrast-标准-4B step62 (HRBench4K+8K)、contrast-保守-4B step62 (HRBench4K+8K)、std-sr1-step140 (HRBench8K)。**不重跑**：三个训崩的长训 checkpoint（保守sr1-443/保守virl39k-437/标准virl39k-437）——其失败大概率是模型无限复读拖超时的症状，修了也不改变"训崩"的结论；CORRUPTED 旧目录（已被取代）。**visionopd-Qwen3.5-4B 的 HRBench8K 重跑仍待 Qwen3.5 环境机器认领**（301761390/301683547，1张卡半小时）。全部重跑完成后需要：重扫登记（`scan_eval_integrity.py`）+ 回填 `compare_vaopd_0701.md`/报告HTML 的 4B 表和相关结论。
+**[重跑安排（2026-07-15，trial 301783374）]** 值得修的污染项已全部排进本机 GPU5 泳道（`experiment_script/run_api_failure_reruns.sh`，接在 uniform-weight HRBench8K 重跑之后串行）：contrast-标准-4B step62 (HRBench4K+8K)、contrast-保守-4B step62 (HRBench4K+8K)、std-sr1-step140 (HRBench8K)。**不重跑**：三个训崩的长训 checkpoint（保守sr1-443/保守virl39k-437/标准virl39k-437）——其失败大概率是模型无限复读拖超时的症状，修了也不改变"训崩"的结论；CORRUPTED 旧目录（已被取代）。**visionopd-Qwen3.5-4B 的 HRBench8K 重跑仍待 Qwen3.5 环境机器认领**（301761390/301683547，1张卡半小时）。全部重跑完成后需要：重扫登记（`scan_eval_integrity.py`）+ 回填 `compare_vaopd_0701.md`/报告HTML 的 4B 表和相关结论。
 
-**[2026-07-15 新实验排队：contrast-标准-qtext（导师建议：question vs irrelevant text，case级互补性分析）]** 昨天和导师讨论出的新实验：**新增一路平行实验（不是替换 black）**——ctrl 用"保留真实图像、把问题换成无关文本 'What is the answer?'"（度量**问题依赖**，对照 black 的**图像依赖**）。**目的是 case 级互补性分析，不是比总分**：两个版本在同样 benchmark 上逐题对比，看哪些 case 被 black 改进、哪些被 qtext 改进、重叠多少——如果两个信号改进的 case 集合互补，后续就把两路信号合并（双 ctrl 融合/加权组合），有希望叠加收益。**不需要写新代码**：现成的 `ra_ctrl_mode=qvis` 就是"保图换文本"，只要把 `ra_generic_prompt` 从默认的 "Describe this image in detail." 换成 "What is the answer?"。启动方式（`scripts/run_contrast_standard_qtext.sh` 已在本机 301783374 排队，等 GPU0-3 空出后自动跑）：
+**[2026-07-15 新实验排队：contrast-标准-qtext（导师建议：question vs irrelevant text，case级互补性分析）]** 昨天和导师讨论出的新实验：**新增一路平行实验（不是替换 black）**——ctrl 用"保留真实图像、把问题换成无关文本 'What is the answer?'"（度量**问题依赖**，对照 black 的**图像依赖**）。**目的是 case 级互补性分析，不是比总分**：两个版本在同样 benchmark 上逐题对比，看哪些 case 被 black 改进、哪些被 qtext 改进、重叠多少——如果两个信号改进的 case 集合互补，后续就把两路信号合并（双 ctrl 融合/加权组合），有希望叠加收益。**不需要写新代码**：现成的 `ra_ctrl_mode=qvis` 就是"保图换文本"，只要把 `ra_generic_prompt` 从默认的 "Describe this image in detail." 换成 "What is the answer?"。启动方式（`experiment_script/run_contrast_standard_qtext.sh` 已在本机 301783374 排队，等 GPU0-3 空出后自动跑）：
 ```bash
 EXPERIMENT=qvis EXPERIMENT_NAME=Vision-OPD-contrast-standard-qtext-Qwen3-VL-2B-Instruct \
   bash scripts/run_experiment_contrast_standard.sh \
@@ -2644,7 +2746,7 @@ EXPERIMENT=qvis EXPERIMENT_NAME=Vision-OPD-contrast-standard-qtext-Qwen3-VL-2B-I
 ```
 配置：2B、contrast-标准（α=1.0 无门控）、本仓库 `train_answer.parquet`、62步、4卡——与 contrast-标准(black) 完全同配置，唯一变量是 ctrl 构造。跑完自动 merge + 9-benchmark + ZoomBench canonical。**评测完成后的关键分析**（谁接手评测结果谁做）：用两个版本的逐题输出（VLMEvalKit xlsx/csv + ZoomBench judge jsonl）拆四象限（both-correct / black-only / qtext-only / both-wrong），重点看 black-only 和 qtext-only 的大小和题目特征。参照：contrast-标准(black) 70.65；历史 qvis（旧权重机制+默认描述文本）67.20。详细设计见 `compare_vaopd_0701.md` 第十六轮。
 
-**[2026-07-14 22:5x 重要发现+补跑] 301638440 之前上报的"task5 全部 step30/60/90 评测完成"是假的**：9个eval里8个瞬间失败（日志只有一行 `bash: shell_scripts/eval_model_temp0_4096.sh: No such file or directory`——driver脚本第二批循环时 cwd 已经不在 VLMEvalKit 里了），只有 std_virl39k step60 真正跑完。空日志：`logs/eval_task5_{cons_virl39k_step30/60/90, std_sr1_step30/60/90, std_virl39k_step30/90}_server_*.log`（各72字节）。已核实6个受影响checkpoint（cons_virl39k 30/60/90、std_sr1 30/60/90）的merge都完好，**已在本机排补跑**（`scripts/run_task5_missing_evals_backfill.sh`，三条静态泳道：GPU5←cons_virl39k 30/60；GPU6←cons_virl39k 90+std_sr1 30；GPU7←std_sr1 60/90+uniform-weight的ZoomBench补跑，各自等前面排的任务退出后接手，端口8020-8026），每个checkpoint都是 9-benchmark+ZoomBench canonical。另有 `scripts/run_cons_sr1_zoombench_after_cleanup.sh` 等cleanup退出后在GPU0补 cons_sr1 30/60/90 的 ZoomBench（端口8027-8029）。
+**[2026-07-14 22:5x 重要发现+补跑] 301638440 之前上报的"task5 全部 step30/60/90 评测完成"是假的**：9个eval里8个瞬间失败（日志只有一行 `bash: shell_scripts/eval_model_temp0_4096.sh: No such file or directory`——driver脚本第二批循环时 cwd 已经不在 VLMEvalKit 里了），只有 std_virl39k step60 真正跑完。空日志：`logs/eval_task5_{cons_virl39k_step30/60/90, std_sr1_step30/60/90, std_virl39k_step30/90}_server_*.log`（各72字节）。已核实6个受影响checkpoint（cons_virl39k 30/60/90、std_sr1 30/60/90）的merge都完好，**已在本机排补跑**（`experiment_script/run_task5_missing_evals_backfill.sh`，三条静态泳道：GPU5←cons_virl39k 30/60；GPU6←cons_virl39k 90+std_sr1 30；GPU7←std_sr1 60/90+uniform-weight的ZoomBench补跑，各自等前面排的任务退出后接手，端口8020-8026），每个checkpoint都是 9-benchmark+ZoomBench canonical。另有 `experiment_script/run_cons_sr1_zoombench_after_cleanup.sh` 等cleanup退出后在GPU0补 cons_sr1 30/60/90 的 ZoomBench（端口8027-8029）。
 **教训**：eval driver 里"跑完"的判断如果只看脚本退出码/流程走完，会把秒退的失败也算成完成——报告"全部完成"前必须抽查一眼输出日志大小或结果文件是否真的存在。
 
 ## 待办 — contrast-标准×virl39k-90step 的 step30 / step60 中间 checkpoint 补测（2026-07-14，trial_id=301761390 排队）
@@ -2723,11 +2825,11 @@ Qwen3.5 环境下同样适用）。**踩这个坑的时候 ZoomBench 那一跑�
 **task5 四个90步实验最终情况**（本机）：
 - 标准×virl39k / 保守×virl39k / 标准×sr1(4096版) 三个都跑完 90/90，30/60/90 三个 checkpoint 都已 merge+评测（`BACKEND=vllm_server`）。
 - **保守×sr1 连续两次崩溃**：第一次是 6144 长度 OOM（backward阶段），第二次（4096）是 vLLM rollout 的 KV-cache OOM，日志显示同一张物理卡上还有另一个进程占了57GB——**根因是本机自己另一个"抢空闲GPU"的评测脚本（`run_std_virl39k_3060_eval_asap.sh`）和这个训练在同一个显存检测窗口里都判断某张卡"空闲"，结果两边同时抢了同一张卡**，属于本机内部的调度竞态，不是跨机器冲突。因为这个实验从未成功生成过 checkpoint，之前"task5 全部评测完成"的驱动脚本（按 checkpoint 是否存在判断）**静默跳过了它**，容易被误以为"四个都跑完了"。
-- **已修复重跑**：`scripts/run_conservative_sr1_retry3.sh`（等4张连续空卡，`MAX_PROMPT_LENGTH=4096`，从0训练）+ `scripts/run_conservative_sr1_retry3_eval.sh`（训练结束后自动merge+评测30/60/90，评测时逐个申请空卡避免重蹈"抢卡"覆辙）都已 nohup 后台跑。
+- **已修复重跑**：`experiment_script/run_conservative_sr1_retry3.sh`（等4张连续空卡，`MAX_PROMPT_LENGTH=4096`，从0训练）+ `experiment_script/run_conservative_sr1_retry3_eval.sh`（训练结束后自动merge+评测30/60/90，评测时逐个申请空卡避免重蹈"抢卡"覆辙）都已 nohup 后台跑。
 
 **教训**：以后凡是"轮询显存<5GB就当空闲抢卡"的脚本，如果同时有多个在跑，需要有一个共享的"已认领"标记（哪怕就是一个本地锁文件），不能只看 `nvidia-smi` 那一瞬间的读数——本次两个自己写的脚本互相competing 才是真正问题所在，比之前怀疑的"跨机器/别的session"更简单也更容易再犯。
 
-**grpo-virl39k-filtered-3ep 已启动**（8卡，`scripts/run_grpo_virl39k_3ep_after_task5.sh` 检测到8卡全部空闲后自动触发）：
+**grpo-virl39k-filtered-3ep 已启动**（8卡，`experiment_script/run_grpo_virl39k_3ep_after_task5.sh` 检测到8卡全部空闲后自动触发）：
 - `TASK_TRAIN_FILE=data/virl39k_train_noimg_filtered.parquet`（原始版14861条，GRPO无全词表蒸馏不受多图OOM影响，不需要1img过滤版）
 - `TRAINER_TOTAL_EPOCHS=3`，共 1392 步，`save_freq=100`，`max_actor_ckpt_to_keep=3`（用户已确认这个取舍：只保留最近3个ckpt，防止设备中途挂掉时至多回退100步）
 - 日志 `logs/grpo_virl39k_filtered_2b_3ep_*.log`，`EXPERIMENT_NAME=Vision-OPD-grpo-Qwen3-VL-2B-Instruct-virl39k-filtered-3ep`
@@ -2940,13 +3042,13 @@ visionopd 开始跑 task4，`EXPERIMENT_NAME` 加 `-trial301761390` 后缀。
 - **标准×virl39k-90step**：✅ 已完成（90/90）
 - **保守×virl39k-90step**：🏃 训练中（GPU0-3）
 - **标准×sr1-90step**：连续两次在 step 0 就 OOM（`Tried to allocate 48.69 GiB`，backward 阶段）。核实过 `vision_sr1_47k_noimg_v2_filtered.parquet` 全部 14355 条都是单图，不是已知坑第1条的多图 OOM，怀疑是 shuffle 后第一个 batch 里恰好有极端长序列样本。已用 `MAX_PROMPT_LENGTH=4096`（原6144）第三次重跑，GPU4-7，日志 `logs/contrast_standard_sr1_90step_retry3_*.log`。
-- **保守×sr1-90step**：第一次尝试（6144）也在 step0 OOM。已排队等标准×sr1(4096版)跑完后，用同样 `MAX_PROMPT_LENGTH=4096` 自动补跑（`scripts/run_conservative_sr1_after_standard_sr1.sh`，nohup 后台）。
+- **保守×sr1-90step**：第一次尝试（6144）也在 step0 OOM。已排队等标准×sr1(4096版)跑完后，用同样 `MAX_PROMPT_LENGTH=4096` 自动补跑（`experiment_script/run_conservative_sr1_after_standard_sr1.sh`，nohup 后台）。
 
 **[更新] `MAX_PROMPT_LENGTH=4096` 确认修复有效**：标准×sr1(4096版)已稳定跑过 8 步（之前两次都在 step0 就 OOM），说明降低 prompt 长度确实解决了这份数据的 OOM 问题，后续保守×sr1 用同样参数补跑应该也没问题。
 
 **这台机器上进行中的后台监控脚本**（避免其他 session 误判为"进程已死"就重启，也避免重复启动）：
-- `scripts/run_queue_task5_90step_conservative.sh`（pid 922900）：已完成它的职责（拉起了两个保守版），仍在 `wait` 保守×virl39k 结束
-- `scripts/run_conservative_sr1_after_standard_sr1.sh`（pid 1118413）：等标准×sr1-retry3(pid 1087015左右)结束后拉起保守×sr1(4096)
+- `experiment_script/run_queue_task5_90step_conservative.sh`（pid 922900）：已完成它的职责（拉起了两个保守版），仍在 `wait` 保守×virl39k 结束
+- `experiment_script/run_conservative_sr1_after_standard_sr1.sh`（pid 1118413）：等标准×sr1-retry3(pid 1087015左右)结束后拉起保守×sr1(4096)
 
 ## ⚠️ 2026-07-14 00:37（Claude, trial_id=301761390）—— 发现真实的跨机器实验撞车，已主动停止本机这一侧
 
@@ -2972,7 +3074,7 @@ visionopd 开始跑 task4，`EXPERIMENT_NAME` 加 `-trial301761390` 后缀。
 
 本机（8卡）当前状态：
 - **contrast-标准×virl39k-90step**：✅ 已完成（90/90），已 merge（`global_step_90` 有完整 `actor/`）。
-- **contrast-保守×virl39k-90step**：🏃 训练中，GPU0-3，pid 68133（`bash scripts/run_vision_opd_ra_vad.sh` 包装进程），日志 `logs/contrast_conservative_virl39k_90step_20260714_000701.log`。截至 00:36 跑到 **step 11/90**，已保存 `global_step_10` checkpoint（`save_freq=10`），启动约28分钟，按当前速率（~80s/it）预计还需约1小时。后台 driver `scripts/run_followup_20260714.sh`（日志 `logs/followup_20260714_merge.log`）会在跑完后自动 merge+prune，**不会自动接着跑 eval**。
+- **contrast-保守×virl39k-90step**：🏃 训练中，GPU0-3，pid 68133（`bash scripts/run_vision_opd_ra_vad.sh` 包装进程），日志 `logs/contrast_conservative_virl39k_90step_20260714_000701.log`。截至 00:36 跑到 **step 11/90**，已保存 `global_step_10` checkpoint（`save_freq=10`），启动约28分钟，按当前速率（~80s/it）预计还需约1小时。后台 driver `experiment_script/run_followup_20260714.sh`（日志 `logs/followup_20260714_merge.log`）会在跑完后自动 merge+prune，**不会自动接着跑 eval**。
 - **contrast-保守×sr1-90step**：❌ 已 OOM 失败，GPU4-7 目前空闲。按上面"协调"说明，本机不重复排查，等 trial_id=301638440 那边的 sr1 OOM 修复方案（4096版）验证后再决定是否在本机复用。
 - **contrast-标准×sr1-90step**：本机从未成功跑过（两次 OOM 后未再重试，交给 301638440 那台机器处理，见上）。
 
@@ -3018,7 +3120,7 @@ Qwen3.5-4B 队列、task5 90-step 队列，全都已经不在跑了：
 2. **重新从零启动**了 contrast-保守×virl39k-90step（GPU0-3）和 contrast-保守×sr1-90step（GPU4-7）——
    这两个之前没有任何 checkpoint，不是断点续传，是全新启动。
 3. Merge 了已完成的 contrast-标准×virl39k-90step（`global_step_90`）。
-4. 启动了后台 driver（`scripts/run_followup_20260714.sh`，日志 `logs/followup_20260714_merge.log`）
+4. 启动了后台 driver（`experiment_script/run_followup_20260714.sh`，日志 `logs/followup_20260714_merge.log`）
    轮询上面两个新启动任务，训练完成后自动 merge+prune（**只做 merge，不自动接着跑 eval 或更多
    training**——后续 eval 和 sr1-90step 的 OOM 排查、task3 重跑都留作明确的下一步，不在本 session
    里盲目自动链式启动，避免重蹈"多个 session 互相抢卡"的覆辙）。
@@ -3061,7 +3163,7 @@ checkpoint，uniform-weight 停在 step_10），**目前处于"未决"状态，�
 四个 90 步短训重跑，`EXPERIMENT_NAME` 加 `-90step` 后缀（全新目录，不会跟旧的62-step/437-step
 checkpoint 冲突），`save_freq=10` 默认值不变，所以 step 60 和 step 90 的 checkpoint 都会保留
 （用户要求"跑到90步，但保留中间60步的ckpt"），可以分别评测两个节点。8卡一次只够跑2个（各4卡），
-按标准优先顺序用一个串行调度脚本 `scripts/run_queue_task5_90step.sh`（nohup 后台跑，driver pid
+按标准优先顺序用一个串行调度脚本 `experiment_script/run_queue_task5_90step.sh`（nohup 后台跑，driver pid
 见 `logs/queue_task5_90step_driver_*.log`）自动排队：
 
 1. 第一批（同时跑，各4卡）：

@@ -1,0 +1,1934 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<title>RA-VAD 对比锐化 Target — 2B 结果报告</title>
+<style>
+  :root {
+    --paper: #f8f7f4;
+    --paper-raised: #ffffff;
+    --ink: #1c2024;
+    --ink-soft: #5a636b;
+    --ink-faint: #8b939a;
+    --line: #e1e4e6;
+    --line-strong: #c9ced2;
+    --accent: #2f5fd9;
+    --accent-soft: #eaf0ff;
+    --accent-soft-solid: #eaf0ff;
+    --accent-ink: #1d3f9e;
+    --teal: #0f7a7c;
+    --teal-soft: #e4f4f3;
+    --win: #b45309;
+    --win-soft: #fdf1e2;
+    --bad: #b0413e;
+    --code-bg: #f0f1ec;
+    --shadow: 0 1px 2px rgba(20,20,20,0.04), 0 8px 24px rgba(20,20,20,0.05);
+    --visionopd: #8b939a;
+    --virl-std: #2f5fd9;
+    --virl-cons: #96acec;
+    --sr1-std: #0f7a7c;
+    --sr1-cons: #7bbcbb;
+    --grpo-line: #b45309;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #15171a;
+      --paper-raised: #1c1f23;
+      --ink: #e9eaec;
+      --ink-soft: #a3aab1;
+      --ink-faint: #6d747b;
+      --line: #2a2e33;
+      --line-strong: #383d43;
+      --accent: #7396ff;
+      --accent-soft: rgba(115,150,255,0.12);
+      --accent-soft-solid: #232a3a;
+      --accent-ink: #b9c8ff;
+      --teal: #4fc7c4;
+      --teal-soft: rgba(79,199,196,0.12);
+      --win: #f0a750;
+      --win-soft: rgba(240,167,80,0.12);
+      --bad: #e2726f;
+      --code-bg: #202327;
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.35);
+      --visionopd: #6d747b;
+      --virl-std: #7396ff;
+      --virl-cons: #3d4d80;
+      --sr1-std: #4fc7c4;
+      --sr1-cons: #386562;
+      --grpo-line: #f0a750;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #15171a; --paper-raised: #1c1f23; --ink: #e9eaec; --ink-soft: #a3aab1;
+    --ink-faint: #6d747b; --line: #2a2e33; --line-strong: #383d43; --accent: #7396ff;
+    --accent-soft: rgba(115,150,255,0.12); --accent-soft-solid: #232a3a; --accent-ink: #b9c8ff; --teal: #4fc7c4;
+    --teal-soft: rgba(79,199,196,0.12); --win: #f0a750; --win-soft: rgba(240,167,80,0.12);
+    --bad: #e2726f; --code-bg: #202327; --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.35);
+    --visionopd: #6d747b; --virl-std: #7396ff; --virl-cons: #3d4d80; --sr1-std: #4fc7c4; --sr1-cons: #386562; --grpo-line: #f0a750;
+  }
+  :root[data-theme="light"] {
+    --paper: #f8f7f4; --paper-raised: #ffffff; --ink: #1c2024; --ink-soft: #5a636b;
+    --ink-faint: #8b939a; --line: #e1e4e6; --line-strong: #c9ced2; --accent: #2f5fd9;
+    --accent-soft: #eaf0ff; --accent-soft-solid: #eaf0ff; --accent-ink: #1d3f9e; --teal: #0f7a7c; --teal-soft: #e4f4f3;
+    --win: #b45309; --win-soft: #fdf1e2; --bad: #b0413e; --code-bg: #f0f1ec;
+    --shadow: 0 1px 2px rgba(20,20,20,0.04), 0 8px 24px rgba(20,20,20,0.05);
+    --visionopd: #8b939a; --virl-std: #2f5fd9; --virl-cons: #96acec; --sr1-std: #0f7a7c; --sr1-cons: #7bbcbb; --grpo-line: #b45309;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "PingFang SC", "Noto Sans SC", -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: var(--accent-soft); }
+
+  .serif {
+    font-family: "Songti SC", "Noto Serif SC", "Iowan Old Style", Georgia, serif;
+  }
+  .mono {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Consolas, monospace;
+  }
+
+  a { color: var(--accent); }
+
+  .wrap { max-width: 880px; margin: 0 auto; padding: 0 24px; }
+  .wrap-wide { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+  header.masthead {
+    border-bottom: 1px solid var(--line);
+    padding: 56px 0 32px;
+  }
+  .eyebrow {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--teal);
+    margin: 0 0 14px;
+  }
+  h1.title {
+    font-family: "Songti SC", "Noto Serif SC", "Iowan Old Style", Georgia, serif;
+    font-size: clamp(26px, 4vw, 36px);
+    font-weight: 600;
+    letter-spacing: 0;
+    margin: 0 0 12px;
+    text-wrap: balance;
+  }
+  .dek {
+    color: var(--ink-soft);
+    font-size: 16.5px;
+    max-width: 34em;
+    margin: 0 0 22px;
+  }
+  .meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 10px;
+    font-size: 13px;
+    color: var(--ink-faint);
+  }
+  .meta-row .mono { color: var(--ink-soft); }
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--line-strong);
+    border-radius: 999px;
+    padding: 3px 10px;
+    background: var(--paper-raised);
+  }
+
+  main { padding: 40px 0 100px; }
+  section { margin-bottom: 64px; }
+  section:last-child { margin-bottom: 0; }
+
+  .section-head { margin-bottom: 22px; }
+  h2.section-title {
+    font-family: "Songti SC", "Noto Serif SC", "Iowan Old Style", Georgia, serif;
+    font-size: 23px;
+    font-weight: 600;
+    margin: 0 0 6px;
+    text-wrap: balance;
+  }
+  .section-sub { color: var(--ink-soft); font-size: 14.5px; max-width: 36em; }
+
+  p { margin: 0 0 14px; max-width: 36em; }
+  .wide-note { max-width: 100%; }
+
+  /* ---- equation cards ---- */
+  .eq-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+    margin: 22px 0 8px;
+  }
+  .eq-card {
+    background: var(--paper-raised);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 20px 22px;
+    box-shadow: var(--shadow);
+  }
+  .eq-label {
+    font-size: 12.5px;
+    letter-spacing: 0.02em;
+    color: var(--ink-faint);
+    font-weight: 600;
+    margin-bottom: 10px;
+  }
+  .eq-body {
+    font-size: 18px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+  .eq-body .mono { font-size: 16.5px; color: var(--ink); }
+  .eq-note {
+    margin-top: 12px;
+    font-size: 14px;
+    color: var(--ink-soft);
+    max-width: 36em;
+  }
+  sub, sup { font-size: 0.68em; }
+
+  /* ---- config diff table ---- */
+  .cfg-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14.5px;
+    background: var(--paper-raised);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+  }
+  .cfg-table th, .cfg-table td {
+    padding: 11px 16px;
+    text-align: left;
+    border-bottom: 1px solid var(--line);
+  }
+  .cfg-table th {
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    color: var(--ink-faint);
+    font-weight: 600;
+    background: var(--code-bg);
+  }
+  .cfg-table tr:last-child td { border-bottom: none; }
+  .cfg-table td.key { color: var(--ink-soft); font-family: ui-monospace, monospace; font-size: 12.5px; }
+  .cfg-table td.val { font-variant-numeric: tabular-nums; }
+  .tag-cons { color: var(--teal); font-weight: 600; }
+  .tag-std { color: var(--accent); font-weight: 600; }
+
+  /* ---- loss chart ---- */
+  .chart-card {
+    background: var(--paper-raised);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 24px 24px 16px;
+    box-shadow: var(--shadow);
+  }
+  .chart-legend {
+    display: flex; gap: 20px; flex-wrap: wrap;
+    font-size: 13px; color: var(--ink-soft); margin-bottom: 4px;
+  }
+  .chart-legend .dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:6px; }
+  .chart-scroll { overflow-x: auto; }
+  svg.chart { display: block; }
+  .grid-line { stroke: var(--line); stroke-width: 1; }
+  .axis-label { fill: var(--ink-faint); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .curve-cons { fill: none; stroke: var(--teal); stroke-width: 2.2; }
+  .curve-std { fill: none; stroke: var(--accent); stroke-width: 2.2; }
+  .curve-old { stroke: var(--ink-faint); stroke-width: 1.6; stroke-dasharray: 3 4; fill: none; }
+  .curve-visionopd { fill: none; stroke: var(--visionopd); stroke-width: 2; stroke-dasharray: 5 4; }
+  .bar-label { fill: var(--ink); font-size: 12.5px; }
+  .bar-val { fill: var(--ink-soft); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .endpoint { fill: var(--paper-raised); stroke-width: 2.2; }
+  .endpoint.cons { stroke: var(--teal); }
+  .endpoint.std { stroke: var(--accent); }
+  .endpoint.visionopd { stroke: var(--visionopd); }
+  .endpoint-label { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  /* ---- data-ablation loss chart ---- */
+  .curve-virl-std { fill: none; stroke: var(--virl-std); stroke-width: 2.1; }
+  .curve-virl-cons { fill: none; stroke: var(--virl-cons); stroke-width: 2.1; }
+  .curve-sr1-std { fill: none; stroke: var(--sr1-std); stroke-width: 2.1; }
+  .curve-sr1-cons { fill: none; stroke: var(--sr1-cons); stroke-width: 2.1; }
+  .curve-grpo-ext { fill: none; stroke: var(--grpo-line); stroke-width: 1.8; stroke-dasharray: 4 3; opacity: 0.9; }
+  .axis-label-right { fill: var(--grpo-line); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .axis-title { fill: var(--ink-faint); font-size: 11.5px; }
+
+  /* ---- interactive chart hover ---- */
+  .chart-svg-wrap { position: relative; }
+  .raw-ghost { fill: none; stroke-width: 1; opacity: 0.2; }
+  .hover-crosshair { stroke: var(--ink-faint); stroke-width: 1; stroke-dasharray: 2 3; opacity: 0; pointer-events: none; }
+  .hover-dot { opacity: 0; }
+  .chart-overlay { fill: transparent; cursor: crosshair; }
+  .chart-tooltip {
+    position: absolute;
+    background: var(--ink);
+    color: var(--paper);
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", monospace;
+    font-size: 11.5px;
+    line-height: 1.6;
+    padding: 7px 11px;
+    border-radius: 7px;
+    pointer-events: none;
+    opacity: 0;
+    transform: translate(-50%, -112%);
+    white-space: nowrap;
+    z-index: 6;
+    box-shadow: var(--shadow);
+  }
+
+  /* ---- results table ---- */
+  .table-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); }
+  table.results {
+    width: 100%;
+    min-width: 920px;
+    border-collapse: collapse;
+    font-size: 14px;
+    background: var(--paper-raised);
+  }
+  table.results th, table.results td {
+    padding: 10px 14px;
+    text-align: right;
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  table.results th:first-child, table.results td:first-child {
+    text-align: left;
+    position: sticky; left: 0;
+    background: var(--paper-raised);
+  }
+  table.results thead th {
+    font-size: 11px;
+    letter-spacing: 0.02em;
+    color: var(--ink-faint);
+    font-weight: 600;
+    background: var(--code-bg);
+    border-bottom: 1px solid var(--line-strong);
+  }
+  table.results thead th:first-child { background: var(--code-bg); }
+  table.results tbody tr:last-child td { border-bottom: none; }
+  table.results td.model-name { font-weight: 600; }
+  table.results td.model-name .sub { display:block; font-weight:400; color: var(--ink-faint); font-size: 11.5px; }
+  table.results tr.hl td { background: var(--accent-soft); }
+  table.results tr.hl td:first-child { background: var(--accent-soft-solid); }
+  table.results tbody tr.row-hidden { display: none; }
+  .row-toggle {
+    margin: 0 8px 0 -2px;
+    vertical-align: middle;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+  .table-toolbar {
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: 8px; font-size: 12.5px; color: var(--ink-faint);
+  }
+  .table-toolbar button {
+    font: inherit; font-size: 12px; color: var(--accent);
+    background: var(--paper-raised); border: 1px solid var(--line-strong);
+    border-radius: 6px; padding: 3px 10px; cursor: pointer;
+  }
+  .table-toolbar button:hover { background: var(--accent-soft); }
+  table.results td.win { color: var(--win); font-weight: 700; }
+  table.results td.bad { color: var(--bad); font-weight: 700; }
+  table.results td.dim { color: var(--ink-faint); }
+  table.results td.triple { line-height: 1.35; }
+  table.results td.triple .a { font-weight: 600; }
+  table.results td.triple .fq { display: block; font-size: 10.5px; color: var(--ink-faint); font-weight: 400; }
+
+  .foot-note {
+    margin-top: 14px;
+    font-size: 12.5px;
+    color: var(--ink-faint);
+    max-width: 100%;
+  }
+  .foot-note code { font-family: ui-monospace, monospace; background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+
+  /* ---- callouts ---- */
+  .findings {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 14px;
+    margin-top: 8px;
+  }
+  .finding {
+    background: var(--paper-raised);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    border-radius: 8px;
+    padding: 16px 18px;
+    box-shadow: var(--shadow);
+  }
+  .finding.warn { border-left-color: var(--bad); }
+  .finding.win { border-left-color: var(--win); }
+  .finding h3 {
+    margin: 0 0 6px;
+    font-size: 14.5px;
+    font-weight: 700;
+  }
+  .finding p { margin: 0; font-size: 13.5px; color: var(--ink-soft); }
+
+  /* ---- caveats ---- */
+  .caveats {
+    background: var(--code-bg);
+    border-radius: 10px;
+    padding: 20px 24px;
+    font-size: 13.5px;
+    color: var(--ink-soft);
+  }
+  .caveats ul { margin: 0; padding-left: 18px; }
+  .caveats li { margin-bottom: 8px; }
+  .caveats li:last-child { margin-bottom: 0; }
+  .caveats strong { color: var(--ink); }
+
+  footer {
+    border-top: 1px solid var(--line);
+    padding: 24px 0 48px;
+    color: var(--ink-faint);
+    font-size: 12.5px;
+  }
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <div class="wrap">
+    <p class="eyebrow">Vision-OPD · RA-VAD · Phase 2-核心 第十 / 十一 / 十二轮</p>
+    <div style="border:1px solid var(--line); border-left:4px solid var(--accent); border-radius:0 8px 8px 0; padding:10px 16px; margin-bottom:18px; font-size:13.5px; color:var(--ink-soft);">
+      📌 <strong>本页自 2026-07-17 起转为过程存档</strong>（保留全部增量记录、修正史与脚注考古）。
+      干净口径的结构化结果请看新总账：<a href="https://claude.ai/code/artifact/8177abba-9996-469d-8d45-87b720b2f293">RA-VAD 结果总账</a>。
+    </div>
+    <h1 class="title">对比锐化蒸馏 Target：2B 结果报告</h1>
+    <p class="dek">
+      把 RA-VAD 自蒸馏的 target 从纯 EMA teacher 分布换成对比锐化分布——
+      <span class="mono">softmax(log p<sub>hi</sub> + α·(log p<sub>hi</sub> − log p<sub>ctrl</sub>))</span>——
+      把一个趋近于零的 teacher-student 信号变成了这套机制第一次真正的学习曲线，也是第一个
+      同时在 ZoomBench 上超过原始 base 模型和 GRPO 的 RA-VAD 变体。
+    </p>
+    <div class="meta-row">
+      <span class="pill">模型 <span class="mono">Qwen3-VL-2B-Instruct</span></span>
+      <span class="pill">EMA 自蒸馏，无 RL reward</span>
+      <span class="pill">62 步 / 1 epoch</span>
+      <span class="pill">black-image ctrl</span>
+      <span class="pill">2026-07-10 → 07-12</span>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <!-- ============ METHOD ============ -->
+  <section class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">机制</p>
+      <h2 class="section-title">从标量权重到蒸馏 target 本身</h2>
+      <p class="section-sub">
+        RA-VAD 是<strong>纯自蒸馏</strong>：EMA teacher（student 权重的滑动平均）通过 KL
+        散度蒸馏给 student，全程没有外部更强 teacher、没有 ground-truth 标签，也没有 RL
+        reward——<span class="mono">reward_model.enable=False</span> 贯穿始终。
+      </p>
+    </div>
+
+    <p>
+      Teacher 会看到同一个 prompt 的两个版本：<strong>hi</strong>（真实图像）和
+      <strong>ctrl</strong>（同尺寸的黑图）。两者的差
+      <span class="mono">log p<sub>hi</sub> − log p<sub>ctrl</sub></span>
+      是整条 pipeline 里唯一能说明"这个 token 是不是真的依赖图像"的信号。原始设计把这个差值
+      当作一个标量<em>权重</em>，加在一个原本平平无奇的蒸馏 target 上。根因诊断（Phase 2-核心
+      第十轮）发现：EMA teacher 和 student 太接近，几乎处处一致——这个差值一直在给一个几乎不
+      存在的信号做加权。
+    </p>
+
+    <div class="eq-grid">
+      <div class="eq-card">
+        <div class="eq-label">原始 target —— 纯 EMA hi 分布</div>
+        <div class="eq-body mono">
+          L = Σ<sub>t</sub> w<sub>t</sub> · KL( p<sub>hi,t</sub> ‖ p<sub>student,t</sub> ) / Σ<sub>t</sub> w<sub>t</sub>
+        </div>
+        <div class="eq-note">
+          w<sub>t</sub> 由逐行 clip + 归一化后的 <span class="mono">log p<sub>hi</sub> − log p<sub>ctrl</sub></span> 得到。
+          在权重最高的十分位上实测 teacher-student KL 只有 <strong>0.0007 nats</strong>——
+          比同一批 token 上 teacher 自己的 hi-vs-ctrl 差距小了约 1800 倍。
+          <br />（2026-07-16 修正公式书写方向：代码实际是 <strong>forward KL——target 在前</strong>，
+          <span class="mono">F.kl_div(student_logp, teacher_logp, log_target=True)</span> = KL(teacher‖student)，
+          `ra_divergence_alpha=0.0`；本报告此前把两个分布的顺序写反了，数值和结论不受影响。）
+        </div>
+      </div>
+
+      <div class="eq-card">
+        <div class="eq-label">对比锐化 target</div>
+        <div class="eq-body mono">
+          target = log_softmax( log p<sub>hi</sub> + α·(log p<sub>hi</sub> − log p<sub>ctrl</sub>) )&nbsp;，
+          &nbsp;限制在 { w : p<sub>hi</sub>(w) ≥ β·max p<sub>hi</sub> } 内
+        </div>
+        <div class="eq-note">
+          数学上等价于几何倾斜 p<sub>hi</sub><sup>1+α</sup> / p<sub>ctrl</sub><sup>α</sup>——
+          相当于把推理期的 contrastive decoding 操作蒸馏进了训练。四重保护保证安全：
+          softmax 保证永远是合法分布；β-plausibility 掩码把支撑集限制在 hi 本来就认可的 token
+          子集；<span class="mono">exclude_token_ids</span> 防止
+          <span class="mono">&lt;|im_end|&gt;</span>/<span class="mono">&lt;|endoftext|&gt;</span>
+          被意外拔高；可选的 position gate 把干预限制在真正有 RA-weight 证据的位置。
+          <br /><br />
+          <strong>★ α<sub>c</sub>=0 matched baseline（07-20 立项，方法的关键隔离对照）：</strong>把上式 α 取 0，
+          target 退化为 <span class="mono">log_softmax(log p<sub>hi</sub>)</span> 限制在同一 plausibility set 内——即
+          <strong>纯温度软化的 EMA-teacher 自蒸馏，没有任何对比锐化</strong>。这个 baseline 与终局 ours 逐项完全一致
+          （uniform 无 w<sub>t</sub> / β=0.1 mask / EOS 豁免 / forward-KL / EMA / unfiltered / 90 步 / len6144），
+          <strong>唯一变量就是 tilt 项</strong>，所以 <em>ours − (α<sub>c</sub>=0)</em> 的差 = 对比锐化本身的净贡献，
+          比 reweight 对照更干净地回答"对比到底有没有用"。validator 已放宽允许 α=0（α&lt;0 仍拒）。
+          <span style="color:var(--accent);">🏃 2B 训练已排队（本地 8 卡，等当前 eval 腾卡后 fresh 启动），出数后回填此处 + 主表。</span>
+        </div>
+      </div>
+
+      <div class="eq-card">
+        <div class="eq-label">终局 loss（uniform）——response token 上的朴素掩码平均</div>
+        <div class="eq-body mono">
+          L = Σ<sub>t</sub> mask<sub>t</sub> · KL( target<sub>t</sub> ‖ p<sub>student,t</sub> ) / Σ<sub>t</sub> mask<sub>t</sub>
+          <br /><span style="color:var(--ink-faint); font-size:0.82em;">（历史含权形式 L = Σ w<sub>t</sub>·KL / Σ w<sub>t</sub>，终局取 w<sub>t</sub>=mask<sub>t</sub> 即退化为上式）</span>
+        </div>
+        <div class="eq-note">
+          <span class="mono">target_mode=contrast</span> 换掉的是 student 被拉向的目标；外层曾经还有一层逐 token 权重
+          <span class="mono">w<sub>t</sub></span>，但<strong>终局配置已把它取成 <span class="mono">w<sub>t</sub>=mask<sub>t</sub></span>（uniform）</strong>，
+          loss 就是 response token 上的普通掩码平均，<strong>公式里不再出现 w<sub>t</sub></strong>。
+          <strong>为什么能去（07-18/07-20 定稿）：</strong>逐 token 权重
+          <span class="mono">w<sub>t</sub></span> 被证明是<strong>非承重、可去掉的 inherited 组件</strong>
+          ——len 对齐后三个 scale 的 uniform vs weighted 差全在噪声带
+          （2B +0.33 / 4B −0.69 / Qwen3.5 +0.29），<strong>故终局直接采用 uniform（无 w<sub>t</sub>、无 gate）</strong>。
+          因此 <span class="mono">w<sub>t</sub></span> reweight 对照<em>不再是</em>本方法的关键 baseline；
+          <strong>真正 matched 的关键 baseline 是 α<sub>c</sub>=0</strong>（见下方 contrast target 卡片）——它保持
+          uniform / β mask / EOS 豁免 / forward-KL / EMA 全部一致，仅把 tilt 项关掉，直接隔离"对比锐化本身"的净贡献。
+          <br />同样是 <strong>forward KL（target 在前）</strong>，方向由
+          <span class="mono">ra_divergence_alpha</span> 控制：0=forward（本报告所有 contrast 实验的实际取值）、
+          1=reverse KL（KL(student‖target)，VA-OPD 论文以及多数蒸馏工作用的方向）、0.5=generalized JSD。
+          <strong>KL 方向消融（reverse vs forward vs JSD）已排入队列</strong>，在 Qwen3-VL-4B × virl39k 上跑。
+        </div>
+      </div>
+
+      <div class="eq-card">
+        <div class="eq-label">w<sub>t</sub> 具体怎么算的 —— <span class="mono">compute_ra_weights()</span>，verl/trainer/ppo/ra_vad.py</div>
+        <div class="eq-body mono" style="font-size:15.5px; line-height:1.9;">
+          a<sub>t</sub> = (log p<sub>hi</sub> − log p<sub>ctrl</sub>)<sub>t</sub> · mask<sub>t</sub><br>
+          a<sub>t</sub><sup>+</sup> = relu(a<sub>t</sub> − δ) &nbsp;<span style="color:var(--ink-faint); font-size:0.8em;">(δ = ra_delta，默认 0)</span><br>
+          â<sub>t</sub> = min( a<sub>t</sub><sup>+</sup> , clip<sub>row</sub> ) &nbsp;<span style="color:var(--ink-faint); font-size:0.8em;">(clip<sub>row</sub> = 同一条 rollout 内 a<sup>+</sup> 正值集合的 95% 分位数，ra_clip_quantile)</span><br>
+          w̃<sub>t</sub> = â<sub>t</sub> / mean<sub>row</sub>(â | â&gt;0) &nbsp;<span style="color:var(--ink-faint); font-size:0.8em;">(正值 token 数 &lt; min_positive_tokens 时整行记 0)</span><br>
+          g<sub>sample</sub> = σ(margin / 0.5) · σ(ra_answer / 0.1) &nbsp;<span style="color:var(--ink-faint); font-size:0.8em;">(margin = mean<sub>row</sub>(a<sub>t</sub>)，ra_answer = mean<sub>row</sub>(w̃<sub>t</sub> | 正值 token)；no_sample_gate=True 时 g=1)</span><br>
+          w<sub>t</sub> = stopgrad( w̃<sub>t</sub> · g<sub>sample</sub> ) · mask<sub>t</sub>
+        </div>
+        <div class="eq-note">
+          五步流水线：① 原始信号（teacher 在 hi/ctrl 两种条件下同一个 token 的 logprob 差）；
+          ② 加 δ 阈值只留正的部分（δ=0 时等价于纯 relu）；③ 按 rollout 逐行裁剪掉 95 分位以上的极端值，
+          防止个别离群 token 主导整行权重；④ 除以本行正值均值做归一化，让每条 rollout 内部的权重量级可比；
+          ⑤ 再乘一个"整条 rollout 是否值得学"的样本级门控——如果这条 rollout 平均的 hi/ctrl 差距很小
+          （margin 低）或者归一化后的"回答质量"信号很弱（ra_answer 低），整条 rollout 的权重会被 sigmoid
+          压得接近 0，而不是逐 token 判断。全程 <span class="mono">stopgrad</span>（<span class="mono">.detach()</span>），
+          w<sub>t</sub> 本身不参与反传，只是给 KL loss 做加权系数。<span class="mono">ra_uniform_weight=True</span>
+          时跳过整条流水线，直接 <span class="mono">w<sub>t</sub>=mask<sub>t</sub></span>——对应上面提到的隔离实验。
+          <br /><br />
+          <strong>⚠️ 历史结论已被推翻（保留作过程记录）：</strong>2026-07-14 的首个隔离实验（62 步、filtered 数据）
+          曾得到 uniform-weight 比带权重低 <strong>2.09pp</strong>（68.56 vs 70.65），当时据此判"外层权重是必要成分"。
+          <strong>但该结论在 07-18/07-20 被系统性推翻</strong>：那 2.09pp 是 repo/filtered 数据 + 短程 62 步的
+          数据依赖假象；换到终局口径（virl39k、len 对齐、90 步）后三个 scale 的 uniform vs weighted 差全部落进
+          噪声带（2B +0.33 / 4B −0.69 / Qwen3.5 +0.29，见消融 C）。<strong>「w<sub>t</sub> 必要」与「uniform 严格更好」
+          两个方向的强 claim 都不成立</strong>，w<sub>t</sub> 最终定性为无显著作用的 inherited 组件，终局配置取 uniform。
+          reweight 因此退出方法叙事——<strong>关键隔离对照改由 α<sub>c</sub>=0 matched baseline 承担</strong>。
+          <br /><br />
+          <strong>不是 attention weight</strong>：raw signal 默认就是上面这个 logprob 差，本报告里的所有实验
+          都没传过 <span class="mono">ra_weight_source</span>，走的都是这条默认路径。代码里另外留了一个
+          <span class="mono">attention_to_image_score()</span> 函数，可以通过
+          <span class="mono">ra_raw_override</span> 换成"attention 集中在图像 token 上的程度"作为 raw signal
+          （需要显式设 <span class="mono">ra_weight_source="attention"</span>），但这条路径从没在任何一次
+          训练里被启用过，纯粹是代码里预留的可扩展点，跟本报告的结果无关。
+        </div>
+      </div>
+    </div>
+
+    <div class="table-scroll" style="margin-top:22px;">
+      <table class="cfg-table">
+        <thead>
+          <tr><th>配置项</th><th class="tag-cons">contrast-保守</th><th class="tag-std">contrast-标准</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="key">α（倾斜强度）</td><td class="val">0.5</td><td class="val">1.0</td></tr>
+          <tr><td class="key">β（plausibility 下限）</td><td class="val">0.1</td><td class="val">0.1</td></tr>
+          <tr><td class="key">position_gate</td><td class="val">开启 —— 只在 ra_weight&nbsp;&gt;&nbsp;0 处倾斜</td><td class="val">关闭 —— 所有位置都做倾斜</td></tr>
+          <tr><td class="key">exclude_token_ids</td><td class="val" colspan="2">im_end (151645)、endoftext (151643) —— 两个配置相同</td></tr>
+          <tr><td class="key">ctrl 构造方式</td><td class="val" colspan="2">同尺寸黑图 —— 消除"有没有图"这个元信号混杂</td></tr>
+          <tr><td class="key">外层 w<sub>t</sub> 乘法</td><td class="val" colspan="2">开启（默认）—— 标准 <span class="mono">logp_hi − logp_ctrl</span> 权重，两个配置都是</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ TRAINING DYNAMICS ============ -->
+  <section class="wrap-wide">
+    <div class="section-head wrap" style="padding:0; max-width:none;">
+      <p class="eyebrow">训练动态</p>
+      <h2 class="section-title">第一次出现真实的学习曲线</h2>
+      <p class="section-sub">
+        两张图都是 2B 的 self-distillation loss，鼠标悬停可以看具体 step / loss 数值，
+        <strong>点击下面图例里的某一项可以单独隐藏/显示对应曲线</strong>（比如只看 contrast-标准和GRPO对比，
+        或者去掉量级差太大的曲线看细节）。上图是本仓库数据、62–65 步的三个变体；下图是同一套 contrast 机制
+        换到 virl39k / sr1-filtered 外部数据后训练更长（437+ 步）的四个变体，叠加了 GRPO(virl39k) 的
+        policy-gradient loss 作对照。
+      </p>
+    </div>
+
+    <div class="chart-card" id="chart-card-1">
+      <div class="chart-legend" id="legend-repo"></div>
+      <div class="chart-scroll chart-svg-wrap">
+        <svg class="chart" id="svg-repo" viewBox="0 0 900 260" preserveAspectRatio="xMidYMid meet" role="img" aria-label="contrast-保守、contrast-标准、VisionOPD 训练损失曲线"></svg>
+        <div class="chart-tooltip" id="tooltip-repo"></div>
+      </div>
+      <p class="foot-note">
+        数据来源：contrast 两条曲线是训练日志中的 <code>ra_vad/kd_loss</code>
+        （<code>run_contrast_conservative_*.log</code>、<code>run_contrast_standard_*.log</code>），
+        去重 2026-07-10 磁盘配额崩溃导致的续训重叠后各得到 61–62 个点；VisionOPD 曲线是
+        <code>vision_opd_seq_20260628_204457.log</code> 里的 <code>actor/vopd_loss</code>（同一
+        字段名，不同 teacher 构造方式），完整 65 步。标准版起点更高（无门控⇒从 step 1 起倾斜就
+        作用于所有位置，包括此前梯度恒为零的位置），但两者都在稳定下降——旧的 bbox-crop teacher
+        （VisionOPD）在同一根 y 轴上几乎看不出变化，说明"没有比较信号可学"不是个例，是这一类
+        self-distillation 机制在换成对比锐化 target 之前的共同问题。本仓库的 GRPO(2B, 3ep) 训练日志本地只留了
+        step 401–585 这一段（更早的部分只在 wandb 里），和这里 1–65 步的时间尺度对不上，没有强行画进这张图。
+      </p>
+    </div>
+
+    <div class="chart-card" id="chart-card-2" style="margin-top:18px;">
+      <div class="chart-legend" id="legend-ablation"></div>
+      <div class="chart-scroll chart-svg-wrap">
+        <svg class="chart" id="svg-ablation" viewBox="0 0 900 320" preserveAspectRatio="xMidYMid meet" role="img" aria-label="contrast 在 virl39k/sr1 上的 loss 曲线，叠加 GRPO(virl39k) 的 pg_loss"></svg>
+        <div class="chart-tooltip" id="tooltip-ablation"></div>
+      </div>
+      <p class="foot-note">
+        20-step EMA 平滑（原始 per-step 值噪声很大，悬停显示的是平滑后的值）。左轴 self-distillation loss
+        （<code>actor/vopd_loss</code>）和右轴 GRPO <code>actor/pg_loss</code> 量纲完全不同——GRPO 是标准
+        PPO/GRPO 裁剪目标，训练健康时本就该在 0 附近震荡，不是"越低越好"，画在一起单纯是为了对齐同一段训练
+        时间线，不能直接比较数值。sr1-standard 训练到 step 145 时中途崩溃重启，图上只画到崩溃前最后一次
+        完整记录的点。
+      </p>
+      <div class="callout" style="margin-top:14px; border-left:3px solid var(--bad); background:var(--win-soft); border-radius:0 8px 8px 0; padding:14px 18px;">
+        <strong style="color:var(--bad);">为什么 contrast 的 loss 后段会回涨？</strong>
+        <p style="margin:8px 0 0; max-width:none; font-size:13.5px; color:var(--ink-soft);">
+          Contrast target 不是一个固定标签，而是<strong>相对当前 EMA teacher 现算出来的</strong>——
+          <span class="mono">target = softmax(log p<sub>hi</sub> + α·(log p<sub>hi</sub> − log p<sub>ctrl</sub>))</span>，
+          而 <span class="mono">p<sub>hi</sub></span> 本身就是 student 权重的滑动平均。训练早期 student ≈ teacher ≈
+          base 模型，target 只是把一个温和分布轻微倾斜，student 很容易追上，loss 快速下降（下图前 100–150
+          步都是单调降）。但每一步 student 都被推向"比当前 teacher 更极端"的分布，teacher 又是 student 的 EMA，
+          于是这是一个自我放大的反馈环：student 更尖锐 → teacher 随之更尖锐 → 下一步的 target 在一个已经更尖锐的
+          teacher 基础上继续加码。62 步的本仓库训练（上图）还没跑到这个环路失控的阶段，loss 一直在降；virl39k/sr1
+          上训到 300+ 步，用零成本的 rollout-dump 扫描已经确认<strong>生成质量的崩溃（中英混杂、无限复读）
+          恰好从 step 150–200 开始</strong>，和下图 loss 转头上升的位置基本对上——student 的真实输出分布
+          已经脱离了任何"合理语言分布"的范围，越来越难用 KL 去逼近一个同样在漂移、且越来越极端的 target，
+          loss 因此不降反升。GRPO(virl39k) 的 pg_loss 全程没有这种单调爬升（它的 target 是标量 reward，
+          不存在这种自我强化的分布漂移），和它没出现生成崩溃的观测一致。
+          <strong>2026-07-14 更新：这个假设已经验证——</strong>把 contrast-标准×virl39k 截短到 90 步重训，
+          7-bench 恢复到 70.68（对照本仓库数据 62 步的 70.65），ZoomBench/POPE/HallusionBench 全部正常，
+          没有任何复读/中英混杂迹象（详见下方 Benchmark 结果表 <span class="mono">§§</span> 脚注）——
+          训练长度确实是崩溃的直接原因，安全区上限比最初猜测的 62 步更宽，但边界确实存在于 90～437 步之间。
+        </p>
+      </div>
+    </div>
+
+    <div class="chart-card" id="chart-card-3" style="margin-top:18px;">
+      <div class="chart-legend" id="legend-short90"></div>
+      <div class="chart-scroll chart-svg-wrap">
+        <svg class="chart" id="svg-short90" viewBox="0 0 900 280" preserveAspectRatio="xMidYMid meet" role="img" aria-label="90步短训重跑组的 self-distillation loss 曲线"></svg>
+        <div class="chart-tooltip" id="tooltip-short90"></div>
+      </div>
+      <p class="foot-note">
+        <strong>90 步短训重跑组（2026-07-14/15，安全区内的完整曲线）</strong>——同样四个 contrast × 外部数据
+        组合，截短到 90 步重训（上图崩溃版的修复实验）。四条曲线全程健康下降、没有出现上图 150 步后的回涨，
+        与下游 benchmark 全部正常（69.3-70.7）互相印证。注意两条 sr1 曲线用的是 <span class="mono">MAX_PROMPT_LENGTH=4096</span>
+        （virl39k 是 6144，为绕开 sr1 数据在该配置下的 OOM），loss 绝对值因此不能跨数据集直接比较，
+        只看各自趋势。数据来源：各训练日志的 <span class="mono">actor/vopd_loss</span>，无平滑。
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ BENCHMARK RESULTS ============ -->
+  <section class="wrap-wide">
+    <div class="section-head wrap" style="padding:0; max-width:none;">
+      <p class="eyebrow">Benchmark 结果 —— 2B</p>
+      <h2 class="section-title">对比 baseline、VisionOPD、GRPO 与两个 contrast 配置</h2>
+      <p class="section-sub">
+        温度=0，max_tokens=4096，7-benchmark 与 POPE/HallusionBench 判分用
+        <span class="mono">gpt-5.4-mini-2026-03-17</span>；ZoomBench 用 canonical native
+        pipeline（<code>infer → judge_qwenlm → cal_acc</code>），同样是外部 GPT judge，
+        <em>不是</em>自判——原因见下方数据质量说明。2B 表按训练数据分组（本仓库 / virl39k-filtered /
+        sr1-filtered），同一模型规模内可直接横向比较；4B 见下方独立表。
+      </p>
+    </div>
+
+    <h3 style="font-size:14px; text-transform:uppercase; letter-spacing:0.06em; color:var(--ink-faint); margin:0 0 12px;">2B —— 全部训练数据合并一张表</h3>
+    <div class="table-toolbar" id="data-filter-2b">
+      按训练数据过滤（baseline 始终保留）：
+      <label><input type="checkbox" class="row-toggle" data-filter="repo" checked> 本仓库</label>
+      <label><input type="checkbox" class="row-toggle" data-filter="virl39k" checked> virl39k-filtered</label>
+      <label><input type="checkbox" class="row-toggle" data-filter="sr1" checked> sr1-filtered</label>
+    </div>
+    <div class="table-scroll">
+      <table class="results">
+        <thead>
+          <tr>
+            <th>模型 / 训练数据</th>
+            <th>BLINK</th><th>MMStar</th><th>MMBench<br>DEV_EN</th><th>VStar<br>Bench</th>
+            <th>MathVista<br>MINI</th><th>HRBench<br>4K</th><th>HRBench<br>8K</th>
+            <th>7-bench<br>平均</th>
+            <th>POPE</th><th>HallusionBench<br><span style="font-weight:400">平均 (aAcc / fAcc / qAcc)</span></th><th>ZoomBench</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr data-group="base">
+            <td class="model-name">baseline<span class="sub">原始未训练（无训练数据）</span></td>
+            <td>53.02</td><td>57.47</td><td>78.09</td><td>72.77</td><td>62.50</td><td>71.13</td><td>67.38</td>
+            <td>66.05</td><td>88.76</td>
+            <td class="triple"><span class="a">51.60</span><span class="fq">68.35 / 41.62 / 44.84</span></td>
+            <td>42.49</td>
+          </tr>
+          <tr data-group="repo">
+            <td class="model-name">VisionOPD<span class="sub">本仓库 · bbox-crop teacher，step 65</span></td>
+            <td>47.55</td><td>58.60</td><td>75.52</td><td>75.39</td><td>61.10</td><td>74.88</td><td>70.38</td>
+            <td>66.20</td><td class="dim">未测</td>
+            <td class="dim">未测</td>
+            <td>37.51<sup>†</sup></td>
+          </tr>
+          <tr data-group="repo">
+            <td class="model-name">noimg<span class="sub">本仓库 · 纯 hi target，step 62</span></td>
+            <td>55.50</td><td>61.20</td><td>76.55</td><td>73.82</td><td>63.20</td><td>75.75</td><td>71.38</td>
+            <td>68.20</td><td class="win">89.16</td>
+            <td class="triple"><span class="a">51.33</span><span class="fq">66.98 / 43.06 / 43.96</span></td>
+            <td>36.45<sup>†</sup></td>
+          </tr>
+          <tr data-group="repo">
+            <td class="model-name">GRPO<span class="sub">本仓库 train.parquet · step585 / 3ep</span></td>
+            <td>53.76</td><td>62.73</td><td>79.38</td><td class="win">80.10</td><td>68.00</td><td>74.38</td><td>73.00</td>
+            <td>70.19</td><td>87.64</td>
+            <td class="triple"><span class="a">50.16</span><span class="fq">66.14 / 41.04 / 43.30</span></td>
+            <td class="win">47.81</td>
+          </tr>
+          <tr data-group="repo">
+            <td class="model-name">contrast-保守<span class="sub">本仓库 · α=0.5，有门控，step 62</span></td>
+            <td>55.39</td><td>63.60</td><td>76.89</td><td>73.30</td><td>65.30</td><td>76.13</td><td>72.88</td>
+            <td>69.07</td><td>88.41</td>
+            <td class="triple"><span class="a">52.90</span><span class="fq">68.56 / 44.22 / 45.93</span></td>
+            <td>40.59</td>
+          </tr>
+          <tr class="hl" data-group="repo">
+            <td class="model-name">contrast-标准<span class="sub">本仓库 · α=1.0，无门控，step 62</span></td>
+            <td class="win">58.71</td><td>62.53</td><td>77.06</td><td>76.96</td><td>67.90</td><td>77.62</td><td>73.75</td>
+            <td>70.65</td><td>89.13</td>
+            <td class="triple"><span class="a win">54.40</span><span class="fq">69.19 / 46.53 / 47.47</span></td>
+            <td>43.67</td>
+          </tr>
+          <tr data-group="repo">
+            <td class="model-name">contrast-标准-uniform-weight<span class="sub">本仓库 · α=1.0，去掉外层 w<sub>t</sub>，step 62</span></td>
+            <td>56.76</td><td>62.20</td><td>76.89</td><td>73.82</td><td>68.00</td><td>75.88</td><td>69.25</td>
+            <td style="color:var(--teal); font-weight:700;">68.97</td><td>88.97</td>
+            <td class="triple"><span class="a">52.60</span><span class="fq">69.40 / 43.35 / 45.05</span></td>
+            <td class="dim">补跑中</td>
+          </tr>
+          <tr data-group="repo">
+            <td class="model-name">contrast-标准-qtext<sup>qt</sup><span class="sub">本仓库 · ctrl=保图换问题("What is the answer?")，step 62</span></td>
+            <td>55.13</td><td>60.40</td><td>74.48</td><td>72.77</td><td>64.90</td><td>75.00</td><td>73.25</td>
+            <td>67.99</td><td>88.93</td>
+            <td class="triple"><span class="a">51.70</span><span class="fq">68.35 / 41.91 / 44.84</span></td>
+            <td>43.20</td>
+          </tr>
+                    <tr data-group="virl39k">
+            <td class="model-name">GRPO<span class="sub">virl39k-filtered · step464 / 1ep</span></td>
+            <td>57.97</td><td class="win">64.60</td><td class="win">79.98</td><td>76.96</td><td class="win">68.70</td><td class="win">78.38</td><td class="win">75.00</td>
+            <td class="win">71.66</td><td>88.71</td>
+            <td class="triple"><span class="a">54.39</span><span class="fq">68.45 / 47.69 / 47.03</span></td>
+            <td>38.34</td>
+          </tr>
+                    <tr data-group="virl39k">
+            <td class="model-name">contrast-标准-reverseKL<span class="sub">virl39k-filtered · <strong>step90</strong> · KL方向消融①（α_div=1.0，2026-07-17）</span></td>
+            <td>56.92</td><td>61.07</td><td>75.60</td><td>76.44</td><td>64.00</td><td>73.62</td><td>70.50</td>
+            <td>68.31</td><td>88.98</td>
+            <td class="triple"><span class="a">50.86</span><span class="fq">67.72 / 40.46 / 44.40</span></td>
+            <td>41.18</td>
+          </tr>
+                    <tr style="background: color-mix(in srgb, var(--teal-soft) 70%, transparent);" data-group="virl39k">
+            <td class="model-name">contrast-保守<span class="sub">virl39k-filtered · <strong>step90</strong>/1ep<sup>§§</sup> · len6144<sup>ℓ</sup></span></td>
+            <td>56.65</td><td>62.67</td><td>77.49</td><td>77.49</td><td>67.3</td><td>76.25</td><td>73.625</td>
+            <td>70.21</td><td>89.10</td>
+            <td class="triple"><span class="a">53.94</span><span class="fq">69.40 / 45.38 / 47.03</span></td>
+            <td>41.18</td>
+          </tr>
+                    <tr style="background: color-mix(in srgb, var(--teal-soft) 70%, transparent);" data-group="sr1">
+            <td class="model-name">contrast-保守<span class="sub">sr1-filtered · <strong>step90</strong>/1ep<sup>§§</sup> · len4096<sup>ℓ</sup></span></td>
+            <td>56.08</td><td>63.4</td><td>77.32</td><td>73.82</td><td>66.2</td><td>77.125</td><td>69.875</td>
+            <td>69.12</td><td>89.24</td>
+            <td class="triple"><span class="a">53.38</span><span class="fq">68.77 / 45.66 / 45.71</span></td>
+            <td>41.66</td>
+          </tr>
+          <tr style="background: color-mix(in srgb, var(--teal-soft) 70%, transparent);" data-group="sr1">
+            <td class="model-name">contrast-标准<span class="sub">sr1-filtered · <strong>step90</strong>/1ep<sup>§§</sup> · len4096<sup>ℓ</sup></span></td>
+            <td>56.65</td><td>62.0</td><td>79.21</td><td>75.39</td><td>67.2</td><td>74.25</td><td>72.875</td>
+            <td>69.65</td><td>88.78</td>
+            <td class="triple"><span class="a">53.31</span><span class="fq">68.98 / 43.93 / 47.03</span></td>
+            <td>41.66</td>
+          </tr>
+                    <tr style="background: color-mix(in srgb, var(--teal-soft) 70%, transparent);" data-group="virl39k">
+            <td class="model-name">contrast-标准<span class="sub">virl39k-filtered · <strong>step90</strong> / 1ep<sup>§§</sup>（终点）· len6144<sup>ℓ</sup></span></td>
+            <td>58.18</td><td>63.87</td><td>78.18</td><td>78.01</td><td>67.00</td><td>76.38</td><td>73.13</td>
+            <td style="color:var(--teal); font-weight:700;">70.68</td><td>88.36</td>
+            <td class="triple"><span class="a">52.93</span><span class="fq">68.56 / 44.51 / 45.71</span></td>
+            <td>41.89</td>
+          </tr>
+          <tr data-group="virl39k">
+            <td class="model-name">GRPO<span class="sub">virl39k-filtered · <strong>step1392 / 3ep</strong>（compute-matched 对照）</span></td>
+            <td>58.29</td><td class="win">66.33</td><td class="win">81.53</td><td>75.92</td><td>67.80</td><td>78.75</td><td>74.875</td>
+            <td class="win">71.93</td><td>87.71</td>
+            <td class="triple"><span class="a">52.22</span><span class="fq">66.77 / 47.69 / 42.20</span></td>
+            <td>41.18</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="foot-note" style="margin-top:10px;">
+      <sup>§§</sup>（2026-07-15 更新）90步短训组的 step30/60 中间点数据见下方独立对比表，主表只保留
+      step90 终点。GRPO(3ep,step1392) compute-matched 对照 7-bench 71.93 全场最高，ZoomBench(41.18)
+      也高于自己的1ep版本(38.34)。
+      <br />
+      <sup>ℓ</sup> <strong>len 标记 = 训练时的 <span class="mono">max_prompt_length</span>，未标的行都是项目默认
+      8192</strong>（launcher 与 <span class="mono">verl/trainer/config/user.yaml</span> 一致）。带标记的行是
+      contrast 全词表蒸馏在外部数据上 OOM 后的被迫降级：virl39k 系列 6144、sr1 系列 4096（sr1 的长样本更极端），
+      配合 <span class="mono">filter_overlong_prompts=True</span> 会把超长样本直接丢弃——所以这些 run 的训练
+      数据分布和默认 8192 的 run 有轻微口径差异（少了最长的一批样本）。GRPO 系列（1ep/3ep）不做全词表蒸馏
+      没有 OOM 问题，全部用默认 8192。参考同 checkpoint 的采样参数消融（见 queue 文档），这类长度差异对
+      最终分数的影响估计在 ~1pp 量级，方向不定，跨 len 对比时注意。
+    </p>
+
+    <h3 style="font-size:14px; text-transform:uppercase; letter-spacing:0.06em; color:var(--ink-faint); margin:32px 0 12px;">90步短训组 — step30/60/90 中间点对比（2026-07-15 补齐）</h3>
+    <p class="section-sub" style="margin-bottom:12px;">同一次训练的三个存档点各跑完整 9-benchmark，看分数随步数的变化趋势。
+    训练 len<sup>ℓ</sup>：virl39k 两组 = 6144，sr1 两组 = 4096（OOM 降级，见主表脚注）。</p>
+    <div class="table-scroll">
+      <table class="results">
+        <thead>
+          <tr>
+            <th>模型 / step</th>
+            <th>BLINK</th><th>MMStar</th><th>MMBench<br>DEV_EN</th><th>VStar<br>Bench</th>
+            <th>MathVista<br>MINI</th><th>HRBench<br>4K</th><th>HRBench<br>8K</th>
+            <th>7-bench<br>平均</th>
+            <th>POPE</th><th>HallusionBench<br><span style="font-weight:400">平均 (aAcc / fAcc / qAcc)</span></th><th>ZoomBench</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="model-name">标准×virl39k<span class="sub">step30</span></td>
+            <td>56.65</td><td>60.93</td><td>77.92</td><td>73.30</td><td>65.30</td><td>78.13</td><td>75.13</td>
+            <td>69.62</td><td>88.82</td><td class="triple"><span class="a">55.09</span><span class="fq">69.72 / 46.53 / 49.01</span></td><td>40.95</td>
+          </tr>
+          <tr>
+            <td class="model-name">标准×virl39k<span class="sub">step60</span></td>
+            <td>56.71</td><td>63.13</td><td>77.66</td><td>74.35</td><td>66.3</td><td>76.375</td><td>72.75</td>
+            <td>69.61</td><td>88.62</td><td class="triple"><span class="a">53.49</span><span class="fq">68.45 / 46.53 / 45.49</span></td><td>41.66</td>
+          </tr>
+          <tr class="hl">
+            <td class="model-name">标准×virl39k<span class="sub"><strong>step90</strong></span></td>
+            <td>58.18</td><td>63.87</td><td>78.18</td><td>78.01</td><td>67.00</td><td>76.38</td><td>73.13</td>
+            <td class="win">70.68</td><td>88.36</td><td class="triple"><span class="a">52.93</span><span class="fq">68.56 / 44.51 / 45.71</span></td><td>41.89</td>
+          </tr>
+          <tr>
+            <td class="model-name">保守×virl39k<span class="sub">step30</span></td>
+            <td>56.13</td><td>61.2</td><td>75.95</td><td>76.44</td><td>65.7</td><td>77.375</td><td>72.5</td>
+            <td>69.33</td><td>89.04</td><td class="triple"><span class="a">52.39</span><span class="fq">67.82 / 42.77 / 46.59</span></td><td>40.36</td>
+          </tr>
+          <tr class="hl">
+            <td class="model-name">保守×virl39k<span class="sub"><strong>step60（本组峰值）</strong></span></td>
+            <td>56.81</td><td>61.87</td><td>77.49</td><td>77.49</td><td>67.0</td><td>78.25</td><td>74.125</td>
+            <td class="win">70.43</td><td>88.91</td><td class="triple"><span class="a">53.28</span><span class="fq">68.14 / 44.22 / 47.47</span></td><td>41.89</td>
+          </tr>
+          <tr>
+            <td class="model-name">保守×virl39k<span class="sub">step90</span></td>
+            <td>56.65</td><td>62.67</td><td>77.49</td><td>77.49</td><td>67.3</td><td>76.25</td><td>73.625</td>
+            <td>70.21</td><td>89.10</td><td class="triple"><span class="a">53.94</span><span class="fq">69.40 / 45.38 / 47.03</span></td><td>41.18</td>
+          </tr>
+          <tr>
+            <td class="model-name">标准×sr1<span class="sub">step30</span></td>
+            <td>53.97</td><td>63.0</td><td>76.46</td><td>76.44</td><td>64.7</td><td>77.875</td><td>75.375</td>
+            <td>69.69</td><td>89.01</td><td class="triple"><span class="a">53.12</span><span class="fq">68.35 / 45.09 / 45.93</span></td><td>42.84</td>
+          </tr>
+          <tr>
+            <td class="model-name">标准×sr1<span class="sub">step60</span></td>
+            <td>56.44</td><td>61.87</td><td>77.75</td><td>74.35</td><td>66.4</td><td>77.75</td><td>72.75</td>
+            <td>69.62</td><td>89.03</td><td class="triple"><span class="a">54.46</span><span class="fq">69.61 / 46.53 / 47.25</span></td><td>42.25</td>
+          </tr>
+          <tr>
+            <td class="model-name">标准×sr1<span class="sub">step90</span></td>
+            <td>56.65</td><td>62.0</td><td>79.21</td><td>75.39</td><td>67.2</td><td>74.25</td><td>72.875</td>
+            <td>69.65</td><td>88.78</td><td class="triple"><span class="a">53.31</span><span class="fq">68.98 / 43.93 / 47.03</span></td><td>41.66</td>
+          </tr>
+          <tr>
+            <td class="model-name">保守×sr1<span class="sub">step30</span></td>
+            <td>55.71</td><td>60.47</td><td>76.72</td><td>76.44</td><td>66.2</td><td>78.25</td><td>73.125</td>
+            <td>69.56</td><td>89.17</td><td class="triple"><span class="a">51.56</span><span class="fq">67.09 / 43.64 / 43.96</span></td><td>41.54</td>
+          </tr>
+          <tr class="hl">
+            <td class="model-name">保守×sr1<span class="sub"><strong>step60（本条峰值）</strong></span></td>
+            <td>56.23</td><td>62.53</td><td>77.23</td><td>75.39</td><td>65.2</td><td>77.875</td><td>73.25</td>
+            <td class="win">69.67</td><td>89.30</td><td class="triple"><span class="a">50.28</span><span class="fq">66.56 / 40.75 / 43.52</span></td><td>42.25</td>
+          </tr>
+          <tr>
+            <td class="model-name">保守×sr1<span class="sub">step90</span></td>
+            <td>56.08</td><td>63.4</td><td>77.32</td><td>73.82</td><td>66.2</td><td>77.125</td><td>69.875</td>
+            <td>69.12</td><td>89.24</td><td class="triple"><span class="a">53.38</span><span class="fq">68.77 / 45.66 / 45.71</span></td><td>41.66</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="foot-note" style="margin-top:10px;">
+      **趋势判读**：标准×virl39k 是唯一单调上升的一条线（69.62→69.61→70.68）；<strong>保守×virl39k
+      在 step60 见顶(70.43)，step90 反而回落(70.21)</strong>；标准×sr1 三点基本持平(69.62-69.69，差距
+      在噪声量级内)——**"90步最好"这个说法不成立，更准确的结论是"90步以内完全健康、没有随步数推移的
+      退化迹象"（对比437+步崩溃版的58-64分），但在这个小范围内谈不上单调改善，真正的最优点需要更细的
+      步数扫描**。<strong>保守×sr1(2026-07-15补齐) 印证了同样的非单调模式</strong>——7-bench 在 step60 见顶(69.67)，step90 反而回落(69.12)，和保守×virl39k 的"step60峰值"完全同构，而两条"标准"线(virl39k单调升、sr1基本持平)都没有这个回落——**"保守"配置(α=0.5,有门控)可能比"标准"配置(α=1.0,无门控)更早触及某种性能天花板，值得作为后续消融的一个具体假设**。
+    </p>
+
+    <h3 style="font-size:14px; text-transform:uppercase; letter-spacing:0.06em; color:var(--ink-faint); margin:32px 0 12px;">Math suite 扩展评测 — 数学增益到底集中在哪类题上（2026-07-15/16 补测）</h3>
+    <p class="section-sub" style="margin-bottom:12px;">
+      MathVista 大涨引出的追问：这个数学增益能不能泛化到其他数学/推理 benchmark？用 contrast-标准×virl39k-90step
+      的 step90 和未训练 base 各跑了 5 个扩展评测（VLMEvalKit server 模式，temp=0 默认口径）。
+    </p>
+    <div class="table-scroll">
+      <table class="results">
+        <thead>
+          <tr>
+            <th>Benchmark</th>
+            <th>contrast-标准×virl39k<br>step90</th><th>Qwen3-VL-2B base</th><th>Δ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="model-name">MathVista_MINI</td>
+            <td class="win">69.20</td><td>61.50</td><td class="win">+7.7</td>
+          </tr>
+          <tr>
+            <td class="model-name">MathVerse_MINI<span class="sub">5 个 split 的均值</span></td>
+            <td>31.32</td><td>30.48</td><td>+0.8</td>
+          </tr>
+          <tr>
+            <td class="model-name">WeMath<span class="sub">Score (Strict)</span></td>
+            <td>31.71</td><td>34.10</td><td class="bad">−2.4</td>
+          </tr>
+          <tr>
+            <td class="model-name">WeMath<span class="sub">Score (Loose)</span></td>
+            <td>47.52</td><td>50.67</td><td class="bad">−3.2</td>
+          </tr>
+          <tr>
+            <td class="model-name">MMMU_DEV_VAL</td>
+            <td>50.00</td><td>54.00</td><td class="bad">−4.0</td>
+          </tr>
+          <tr>
+            <td class="model-name">OCRBench</td>
+            <td>84.4</td><td>85.7</td><td>−1.3</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout" style="margin-top:14px; border-left:3px solid var(--accent); background:var(--paper-raised); border:1px solid var(--line); border-left-width:3px; border-radius:0 8px 8px 0; padding:14px 18px;">
+      <strong>判读：math 增益是"窄"的，不是全面数学能力提升。</strong>
+      <p style="margin:8px 0 0; max-width:none; font-size:13.5px; color:var(--ink-soft);">
+        MathVista(+7.7)一枝独秀，MathVerse 基本持平(+0.8)，而侧重多步推理链的 WeMath(−2.4/−3.2)、
+        跨学科知识的 MMMU(−4.0)、纯 OCR 的 OCRBench(−1.3)全部小幅回落。与 virl39k 训练数据的题材
+        （几何/图表单步视觉推理，MathVista 型）高度吻合：contrast×virl39k 学到的更像"MathVista 这类题的
+        解题分布"，而不是可迁移的数学推理能力。写 paper 时 MathVista 的增益应当与这组负/平结果并列呈现，
+        避免"提升数学能力"的过度概括。
+      </p>
+    </div>
+    <div class="callout" style="margin-top:14px; border-left:3px solid var(--win); background:var(--paper-raised); border:1px solid var(--line); border-left-width:3px; border-radius:0 8px 8px 0; padding:14px 18px;">
+      <strong>MathVerse "+0.8" 的 split 级真相：不是无效果，是两头相消（2026-07-16 拆解）。</strong>
+      <p style="margin:8px 0 0; max-width:none; font-size:13.5px; color:var(--ink-soft);">
+        按 5 个 split 拆（base → step90）：Vision Only 23.2→25.9（<strong>+2.7</strong>）、Text Lite
+        31.7→34.9（<strong>+3.2</strong>）、Vision Intensive 29.4→30.5（+1.0）、Vision Dominant
+        27.5→27.2（−0.4）、<strong>Text Dominant 40.5→38.2（−2.3）</strong>。机制上与设计自洽：contrast
+        把权重压向「图像增益 lp_hi−lp_ctrl 大」的 token，改善的是<strong>读图</strong>——所以越依赖看图的
+        split 越涨；而推导链 token 的图像增益≈0、权重本来就低，蒸馏不会创造 base 没有的多步推理能力——
+        Text Dominant（文字给足条件、纯拼推导）反而略降。MathVista(+7.7) 恰是"看图读数/单步几何"题型
+        正中 virl39k 分布；MathVerse 是"看完图还要推五步"，读图改善被推理瓶颈封顶。WeMath/MMMU 同理。
+      </p>
+    </div>
+    <div class="callout" style="margin-top:14px; border-left:3px solid var(--bad); background:var(--paper-raised); border:1px solid var(--line); border-left-width:3px; border-radius:0 8px 8px 0; padding:14px 18px;">
+      <strong>待验证假设：qtext × MathVerse 应呈相反的 split 模式。</strong>
+      <p style="margin:8px 0 0; max-width:none; font-size:13.5px; color:var(--ink-soft);">
+        qtext 的对比信号=「问题文本增益」，与 black 的「图像增益」正交——预测 qtext 在 Text Dominant 上的
+        回落小于 black 的 −2.3（甚至持平/略升），Vision 类 split 则更弱。如证实，即为「两路 ctrl 信号各管
+        一段、双 ctrl 合体值得做」的直接证据（与 2B 表下方 black+qtext union 上界分析互相支撑）。
+        <em>状态：qtext 尚未跑过 MathVerse，补测已排队（queue.md E 组，单卡 ~30min）。</em>
+      </p>
+    </div>
+    <p class="foot-note" style="margin-top:10px;">
+      评测口径：VLMEvalKit server 模式，temp=0 默认口径；MathVerse_MINI 为 5 split 均值。
+      <br />
+      ⚠ WeMath 口径疑点：VA-OPD 官方 base = 36.8，本仓库实测 Strict 34.10 / Loose 50.67——官方值落在两个
+      口径之间对不上任何一个（同类问题在 HRBench 官方复刻时确认过是 prompt 风格差异）。疑点未解决前，
+      WeMath 只用于本表内部的 trained-vs-base 相对比较。
+      <br />
+      ⚠ MathVerse 口径疑点：VA-OPD 官方 base=19.6 与本仓库实测 30.48 差 11pp，绝对值不可比（官方 19.6 反而
+      接近我们 base 的 Vision Only 单 split 23.2）。候选解释：avg@8 采样系统性压低 base（蒸馏后更确定性→
+      表观增益被放大）、判分提取或 split 取法不同——他们 +12.3 的终点 31.9 ≈ 我们的 base 30.48。跨 harness
+      数字一律只做引用式并排、不做同表 Δ。
+    </p>
+
+    <h3 style="font-size:14px; text-transform:uppercase; letter-spacing:0.06em; color:var(--ink-faint); margin:32px 0 12px;">KL 方向消融 — forward vs JSD（2026-07-16，reverse 待跑）</h3>
+    <p class="section-sub" style="margin-bottom:12px;">
+      现有全部 contrast 实验用 forward KL（<span class="mono">ra_divergence_alpha=0</span>，target 在前）；
+      多数蒸馏工作和 VA-OPD 用 reverse。此消融在完全相同的配置（2B×virl39k，contrast-标准，90步，batch 32，
+      len 6144）下只换 <span class="mono">ra_divergence_alpha</span>。JSD（α=0.5）已完成；reverse（α=1.0）
+      仍待认领。
+    </p>
+    <div class="table-scroll">
+      <table class="results">
+        <thead>
+          <tr>
+            <th>Loss</th>
+            <th>BLINK</th><th>MMStar</th><th>MMBench<br>DEV_EN</th><th>VStar<br>Bench</th>
+            <th>MathVista<br>MINI</th><th>HRBench<br>4K</th><th>HRBench<br>8K</th>
+            <th>7-bench<br>平均</th>
+            <th>POPE</th><th>HallusionBench<br><span style="font-weight:400">aAcc / fAcc / qAcc</span></th><th>ZoomBench</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="model-name">forward KL<span class="sub">α=0（现有默认）· eval@vllm 0.11</span></td>
+            <td>58.18</td><td>63.87</td><td>78.18</td><td>78.01</td><td>67.00</td><td>76.38</td><td>73.13</td>
+            <td class="win">70.68</td><td>88.36</td>
+            <td class="triple"><span class="a">68.56</span><span class="fq">44.51 / 45.71</span></td>
+            <td>41.89</td>
+          </tr>
+          <tr>
+            <td class="model-name">JSD<span class="sub">α=0.5 · eval@vllm 0.18<sup>♮</sup></span></td>
+            <td>57.13</td><td>62.67</td><td>78.18</td><td>75.92</td><td>65.70</td><td>76.12</td><td>67.88</td>
+            <td>69.08</td><td>88.53</td>
+            <td class="triple"><span class="a">68.35</span><span class="fq">44.51 / 45.71</span></td>
+            <td>41.89</td>
+          </tr>
+          <tr>
+            <td class="model-name">reverse KL<span class="sub">α=1.0 · VA-OPD/主流蒸馏方向</span></td>
+            <td class="dim" colspan="9" style="text-align:center">待其他机器认领（命令见 queue.md）</td>
+            <td class="dim">待跑</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="foot-note" style="margin-top:10px;">
+      <strong>初步结论：KL 方向（forward vs JSD）在这个 setting 下基本不敏感</strong>——表面差 −1.60pp
+      （69.08 vs 70.68），但两行的 eval 栈不同（forward 当时用 vllm 0.11，JSD 用 0.18），判别实验实测
+      栈差异本身就有 ~1.9pp（forward checkpoint 的 BLINK 在 0.18 下从 58.18 → 56.29）——<strong>同栈
+      对比时 JSD 的 BLINK(57.13) 甚至比 forward@0.18(56.29) 略高</strong>。幻觉类指标完全打平
+      （Hallusion fAcc/qAcc 两行一字不差，POPE ±0.17，ZoomBench 同分）。唯一超出栈噪声的单项是
+      HRBench8K(−5.25)，其中混有约 1.4pp 的 judge 零星失败，剩余部分待 reverse 组出来后一起判读。
+      <br />
+      <sup>♮</sup> <strong>JSD 这行有一段数据事故史，此处为修正后数字</strong>：第一次判分时共享 Azure judge
+      endpoint 被多机并发打爆（持续 429 限流），VLMEvalKit 静默降级为 exact matching，长 CoT 回答被字面匹配
+      全灭，产出过一版假分数（BLINK 42.14 / MMStar 50.60 / MMBench 52.23）——只有不依赖
+      GPT judge 的 POPE 和独立判分管线的 ZoomBench 幸免，这个分裂模式正是排查的突破口。本表数字是清缓存后
+      低并发（nproc=2, retry=12）重判的结果。教训：<strong>judge 打分日志里出现 "OPENAI API is not working
+      properly / exact matching" 时分数一律作废</strong>，且多机并发跑 judge 时要错峰或降速。
+    </p>
+    <p class="foot-note" style="margin-top:10px;">
+      <sup>†</sup> 这三行 ZoomBench 是较早的 v3-fixed native pipeline 数字，未走本表其余行所用的最新
+      canonical GPT-judge 复核，暂不能直接和同表其余 ZoomBench 数字比较。noimg(virl39k) 一行是
+      offline/server 双跑区间值。
+      <br />
+      2B 表内 MMStar 最优其实是 contrast-保守·本仓库(63.60)，标准版是 62.53——两个 contrast 配置在
+      本仓库数据上互有胜负，标准版 7-bench 平均分领先(70.65 vs 69.07)主要来自
+      BLINK/VStar/MathVista/HRBench 四项的更大优势。GRPO 换数据后 7-bench(71.66)是全表 2B 最高，
+      但 ZoomBench(38.34)也是全表最低——数据消融的完整讨论见下方"怎么读这张表"。
+      <br />
+      <sup>‡</sup> contrast × 外部数据的 437+ 步长训版本全部训崩（7-bench 58-64，低于零基线，无限复读+中英混杂），结果行已从本表移除以免误比——崩溃现象与根因分析见上方"训练动态"一节的第二张 loss 图及其说明；90步短训修复版见表内 step90 行。<br />
+      <sup>⚠</sup> <strong>2026-07-15 重跑完成：uniform-weight 的 HRBench8K 从 66.38 修正为 69.25</strong>
+      （原因：61/800 条推理请求当时直接失败，预测文本是 "Failed to obtain answer via API."，全部被
+      计错；其余 8 个 benchmark 无此问题，judge 本身没有问题）。7-bench 平均从 68.56 修正为
+      <strong>68.97</strong>——**"uniform-weight 比带权重版(70.65)低"的结论方向不变，幅度从 2.09pp
+      缩小到 1.68pp**，仍超出噪声带，"外层逐token权重是必要成分"的结论成立。同批一起重跑修正的还有
+      4B 两个变体的 HRBench4K/8K（contrast-标准 79.75/76.63→79.875/78.0，7-bench 76.58→76.79；
+      contrast-保守 80.13/77.63→80.75/77.25，7-bench 77.09→77.13），4B 上两个变体的排序
+      （保守>标准，77.13 vs 76.79）不受影响。
+      <br />
+      <sup>§§</sup> <strong>2026-07-14 验证结果：训练长度假设成立</strong>——同样的 contrast-标准 × virl39k 配置，
+      把训练步数从 437（崩溃）截短到 90 步，7-bench 平均恢复到 <strong>70.68</strong>，和本仓库数据 62 步版本的
+      70.65 基本打平，POPE(88.36)/HallusionBench(68.56/44.51/45.71)/ZoomBench(41.89) 全部在正常区间，没有任何
+      无限复读或中英混杂的退化迹象。90 步比本仓库数据的 62 步略长，仍然健康，说明"安全区"边界比最初猜测的
+      62 步更宽，但确实存在上限——真实边界在 90～437 步之间，具体在哪一步开始失控还没有进一步细分实验。
+      <br />
+      <sup>qt</sup> qtext 行为 offline 后端（black 行为 vllm_server），两后端聚合分数等价性已验证
+      （±1.5pp）；逐题四象限分析与 union 上界见下方分析块，原始数据 docs/qtext_quadrant_analysis_20260716.md。
+      <br />
+      <strong>KL 方向消融（2026-07-17 ①出数）</strong>：同 setting 只改 divergence 方向——forward
+      KL(target‖student)=主线 70.68/Zoom 41.89，reverse KL(student‖target)=<strong>68.31（−2.37pp）</strong>/
+      Zoom 41.18——mode-seeking 方向在本框架全面无增益（各基准一致小幅回落，非单项塌方）。JSD(α=0.5)
+      已训完待评，出数后补第三点。
+    </p>
+    <div class="callout" style="margin-top:14px; border-left:3px solid var(--accent); background:var(--paper-raised); border:1px solid var(--line); border-left-width:3px; border-radius:0 8px 8px 0; padding:14px 18px;">
+      <strong>qtext 消融：退化集中在纯视觉感知，支持「ctrl 必须移除视觉信息」的设计选择（2026-07-16 四象限分析）。</strong>
+      <p style="margin:8px 0 0; max-width:none; font-size:13.5px; color:var(--ink-soft);">
+        ctrl 分支"保图换问题"（qtext）比主线"黑图保问题"（black）全面低 2-3pp（7-bench 67.99 vs 70.65），
+        没有任何基准 qtext 净赢。逐题对比（6 个 MCQ 基准 N=6356）：双对 3652 / 仅black对 657(10.3%) /
+        仅qtext对 494(7.8%) / 双错 1553——翻转双向存在，说明两模型能力高度重叠、qtext 是整体信号更弱而非
+        某项塌方。退化集中在<strong>纯视觉对比/感知类</strong>：BLINK 的 Forensic_Detection(净+30/132) 与
+        Visual_Similarity(净+19/135) 两类贡献了 BLINK 净差的 72%，HRBench cross 子集也偏高，而 ZoomBench
+        基本持平(43.20 vs 43.67)。机制自洽：black 的对比信号=「图像带来的全部增益」，qtext 的=「问题文本
+        带来的增益」，视觉依赖 token 的对比度被稀释。
+      </p>
+    </div>
+    <div class="callout" style="margin-top:14px; border-left:3px solid var(--win); background:var(--paper-raised); border:1px solid var(--line); border-left-width:3px; border-radius:0 8px 8px 0; padding:14px 18px;">
+      <strong>black+qtext 合体潜力：oracle union 上界 6-bench 71.11→77.90（+6.8pp）→ 建议做「双 ctrl」训练实验。</strong>
+      <p style="margin:8px 0 0; max-width:none; font-size:13.5px; color:var(--ink-soft);">
+        任一模型对即算对的上界：BLINK 58.71→69.44、MMStar 62.53→71.13、MMBench 77.06→82.13、
+        V* 76.96→81.68、HR4K 77.62→82.50、HR8K 73.75→80.50。两个 caveat：(a) 先知上界——真实推理侧集成
+        （置信度路由/logit平均）一般只能吃到 1/3~1/2，两模型投票破不了平局；(b) 部分是噪声红利——不同
+        seed 的两个 black 做 union 预计也虚涨 ~4-5pp（未实测，可作对照）。<strong>更划算的是训练侧合体
+        「双 ctrl」</strong>：black 与 qtext 的 ctrl 各供一路对比信号（图像增益 vs 问题增益），单模型同时
+        吃两路（ctrl 分布取平均，或逐 token 权重取 max），90 步一次训练 ~2.5h 即可验证。
+        <em>状态：待讨论后排队。</em>
+      </p>
+    </div>
+
+    <h3 style="font-size:14px; text-transform:uppercase; letter-spacing:0.06em; color:var(--ink-faint); margin:32px 0 12px;">virl39k×90step 消融矩阵（2026-07-17 mlx 批量回填）</h3>
+    <p class="section-sub" style="margin-bottom:12px;">
+      主表口径（temp0/pp1.5/4096，GPT judge，ZoomBench canonical）。对照行 = contrast-标准×virl39k step90（"主表 ours"）。
+    </p>
+    <div class="table-scroll">
+      <table class="results">
+        <thead><tr><th>2B × virl39k step90</th><th>BLINK</th><th>MMStar</th><th>MMBench</th><th>VStar</th><th>MathVista</th><th>HR4K</th><th>HR8K</th><th>POPE</th><th>Hallu aAcc</th><th>Zoom</th></tr></thead>
+        <tbody>
+          <tr class="hl"><td class="model-name">ours：forward α_c=1 + gate<span class="sub">主表行（7-bench 70.68）</span></td><td>58.18</td><td>63.87</td><td>78.18</td><td>76.44</td><td>67.0</td><td>76.63</td><td>72.88</td><td>88.98</td><td>68.56</td><td>41.89</td></tr>
+          <tr><td class="model-name">X4 no-sample-gate</td><td>58.23</td><td>62.40</td><td>78.52</td><td>74.87</td><td>66.8</td><td>76.38</td><td>72.25</td><td>88.62</td><td>69.30</td><td>41.07</td></tr>
+          <tr><td class="model-name">X3 α_c=0.5 无gate</td><td>56.65</td><td>62.87</td><td>78.35</td><td>77.49</td><td>68.1</td><td>76.38</td><td>73.50</td><td>88.79</td><td>69.72</td><td>43.43</td></tr>
+          <tr><td class="model-name">X15 α_c=2.0 无gate</td><td>53.39</td><td>60.93</td><td>77.66</td><td>77.49</td><td>62.7</td><td>74.50</td><td>71.75</td><td>88.64</td><td>66.46</td><td>43.43</td></tr>
+          <tr><td class="model-name">KL: JSD α_div=0.5<span class="sub">judge 429 事故重判后平反</span></td><td>57.08</td><td>62.33</td><td>78.26</td><td>76.44</td><td>65.7</td><td>75.37</td><td>73.00</td><td>88.50</td><td>68.87</td><td>41.89</td></tr>
+          <tr><td class="model-name">KL: reverse α_div=1</td><td>56.92</td><td>61.07</td><td>75.60</td><td>76.44</td><td>64.0</td><td>73.63</td><td>70.50</td><td>88.98</td><td>67.72</td><td>41.18</td></tr>
+          <tr><td class="model-name">E2 uniform-weight（去 w_t）</td><td class="win">59.92</td><td class="win">64.07</td><td class="win">79.81</td><td>76.44</td><td class="win">67.3</td><td class="win">77.25</td><td>72.25</td><td>88.65</td><td class="win">69.61</td><td class="win">43.55</td></tr>
+          <tr><td class="model-name">E1 OPSD answer-hint</td><td>55.29</td><td>60.13</td><td>73.11</td><td>75.39</td><td>62.1</td><td>74.38</td><td>72.75</td><td>88.58</td><td>68.24</td><td>38.46</td></tr>
+          <tr><td class="model-name">E9 ours × UNFILTERED 数据</td><td>57.23</td><td>63.27</td><td>77.66</td><td class="win">80.10</td><td>65.9</td><td class="win">77.88</td><td>72.75</td><td>88.57</td><td class="win">70.03</td><td class="dim">待跑</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="table-scroll" style="margin-top:16px;">
+      <table class="results">
+        <thead><tr><th>4B / Qwen3.5 × virl39k step90</th><th>BLINK</th><th>MMStar</th><th>MMBench</th><th>VStar</th><th>MathVista</th><th>HR4K</th><th>HR8K</th><th>POPE</th><th>Hallu aAcc</th><th>Zoom</th></tr></thead>
+        <tbody>
+          <tr><td class="model-name">4B ours(std)<span class="sub">X5 · len6144</span></td><td>61.65</td><td>67.13</td><td>82.82</td><td>83.25</td><td>69.7</td><td>76.62</td><td>73.88</td><td>87.82</td><td>70.56</td><td>42.01</td></tr>
+          <tr><td class="model-name">4B OPSD answer-hint<span class="sub">X6</span></td><td>57.55</td><td>64.67</td><td>83.33</td><td>79.06</td><td>66.1</td><td>76.00</td><td>72.37</td><td>87.45</td><td>66.77</td><td>41.78</td></tr>
+          <tr><td class="model-name">4B uniform-weight<span class="sub">X11 · ⚠len4096（与 X5 len 混淆，P19 修正中）</span></td><td class="win">67.28</td><td class="win">70.00</td><td>82.82</td><td>82.20</td><td class="win">76.7</td><td class="win">79.88</td><td class="win">76.38</td><td>88.71</td><td class="win">74.13</td><td class="dim">待跑</td></tr>
+          <tr><td class="model-name">Qwen3.5 ours(std)<span class="sub">X1(T3a)</span></td><td>66.23</td><td>75.33</td><td>82.73</td><td>82.72</td><td>82.3</td><td>85.12</td><td>78.25</td><td>88.39</td><td>76.13</td><td>53.73</td></tr>
+          <tr><td class="model-name">Qwen3.5 OPSD answer-hint<span class="sub">X2</span></td><td>64.86</td><td>72.13</td><td>78.44</td><td>84.29</td><td>77.9</td><td>81.25</td><td>77.75</td><td>88.70</td><td>74.34</td><td>45.33</td></tr>
+          <tr><td class="model-name">Qwen3.5 uniform-weight<span class="sub">X12 · len4096</span></td><td class="win">68.12</td><td class="win">75.53</td><td class="win">86.00</td><td>83.25</td><td>81.7</td><td>84.62</td><td class="win">80.00</td><td>88.44</td><td>75.39</td><td>53.49</td></tr>
+          <tr><td class="model-name">Qwen3.5 contrast-保守 seed 对<span class="sub">X7 seedA/seedB（run-to-run 噪声实测）</span></td><td colspan="9" style="text-align:center" class="dim">9-bench 两份已出（见 queue 表）；ZoomBench 50.89 vs 49.59 → <strong>噪声 ±1.3pp</strong></td><td>50.9/49.6</td></tr>
+          <tr><td class="model-name">Qwen3.5 GRPO×本仓库<span class="sub">step195 · 7/9 项（缺 POPE/Hallu 补跑中）</span></td><td>62.97</td><td>64.13</td><td>79.38</td><td>83.77</td><td>62.8</td><td>75.25</td><td>66.62</td><td class="dim">缺</td><td class="dim">缺</td><td class="dim">待跑</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout" style="margin-top:14px; border-left:3px solid var(--bad); background:var(--paper-raised); border:1px solid var(--line); border-left-width:3px; border-radius:0 8px 8px 0; padding:14px 18px;">
+      <strong>本轮矩阵的四个关键读数（2026-07-17）。</strong>
+      <p style="margin:8px 0 0; max-width:none; font-size:13.5px; color:var(--ink-soft);">
+        ① <strong>α 曲线收官</strong>：α_c∈[0,0.5] 平台期（种子噪声带内）→ α=1(reverse KL 方向) 温和下降 →
+        α=2 明显下降（BLINK −4.8/MathVista −4.3）——默认配置已接近最优，机制对 α/gate 不敏感；JSD 首评的
+        "暴跌"100% 是 judge 429 降级事故，重判后与 forward 无实质差异。
+        ② <strong>uniform-weight 反转成体系</strong>：2B +0.3（E2 71.01 vs 70.68）、4B +2.9（X11，含 len 混淆待
+        P19 排除）、Qwen3.5 +0.4（X12 79.24 vs X1 78.87 附近）——w_t 加权在 virl39k 上三个 scale 全部不掉分，
+        「外层权重必要」的旧结论（repo 数据 −1.68pp）是数据依赖的，method 叙事需降级 w_t。
+        ③ <strong>run-to-run 噪声首个实测</strong>：X7 种子对 ZoomBench ±1.3pp、9-bench ±1-2pp——今后 ≤2pp 的
+        消融差异都应视为噪声带内。
+        ④ <strong>filter 不敏感</strong>：E9 unfiltered vs filtered 基本 ±1pp（VStar 反 +3.7）——主表迁往
+        unfiltered 口径无风险（Stage V 验证门通过中）。
+      </p>
+    </div>
+    <h3 style="font-size:14px; text-transform:uppercase; letter-spacing:0.06em; color:var(--ink-faint); margin:32px 0 12px;">4B</h3>
+    <div class="table-scroll">
+      <table class="results">
+        <thead>
+          <tr>
+            <th>模型</th>
+            <th>BLINK</th><th>MMStar</th><th>MMBench<br>DEV_EN</th><th>VStar<br>Bench</th>
+            <th>MathVista<br>MINI</th><th>HRBench<br>4K</th><th>HRBench<br>8K</th>
+            <th>7-bench<br>平均</th>
+            <th>POPE</th><th>HallusionBench<br><span style="font-weight:400">平均 (aAcc / fAcc / qAcc)</span></th><th>ZoomBench</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="model-name">baseline<span class="sub">Qwen3-VL-4B-Instruct，原始未训练（2026-07-13 全量重测，取代旧的不一致数字）</span></td>
+            <td class="win">67.18</td><td>68.93</td><td>84.11</td><td>80.63</td><td>73.90</td><td>79.88</td><td>73.75</td>
+            <td>75.48</td><td>89.43</td>
+            <td class="triple"><span class="a">54.81</span><span class="fq">70.56 / 45.95 / 47.91</span></td>
+            <td>44.14<sup>¶</sup></td>
+          </tr>
+          <tr>
+            <td class="model-name">VisionOPD<span class="sub">yijiangli 原版 ckpt，2026-07-13 全量重测确认</span></td>
+            <td>63.76</td><td>65.67</td><td>84.97</td><td>83.25</td><td>71.40</td><td>76.50</td><td>75.25</td>
+            <td>74.40</td><td class="win">89.60</td>
+            <td class="triple"><span class="a">56.03</span><span class="fq">70.45 / 47.98 / 49.67</span></td>
+            <td>52.90<sup>¶</sup></td>
+          </tr>
+          <tr>
+            <td class="model-name">GRPO<span class="sub">可验证 reward，step 585 / 3ep</span></td>
+            <td>63.28</td><td>69.13</td><td class="win">85.48</td><td class="win">89.01</td><td>75.70</td><td class="win">80.88</td><td class="win">79.50</td>
+            <td class="win">77.57</td><td>87.97</td>
+            <td class="triple"><span class="a">57.32</span><span class="fq">71.71 / 50.58 / 49.67</span></td>
+            <td class="win">53.25</td>
+          </tr>
+          <tr class="hl">
+            <td class="model-name">contrast-保守<span class="sub">α=0.5，有门控，step 62</span></td>
+            <td>66.96</td><td>69.67</td><td>82.47</td><td>84.29</td><td class="win">78.50</td><td>80.75</td><td>77.25</td>
+            <td style="color:var(--teal); font-weight:700;">77.13</td><td>88.45</td>
+            <td class="triple"><span class="a">59.53</span><span class="fq">73.08 / 52.31 / 53.19</span></td>
+            <td>43.79</td>
+          </tr>
+          <tr>
+            <td class="model-name">contrast-标准<span class="sub">α=1.0，无门控，step 62</span></td>
+            <td>66.86<sup>§</sup></td><td class="win">71.00</td><td>80.15</td><td>83.25</td><td>78.40</td><td>79.875</td><td>78.0</td>
+            <td style="color:var(--teal); font-weight:700;">76.79</td><td>88.71</td>
+            <td class="triple"><span class="a win">59.51</span><span class="fq">73.19 / 52.60 / 52.75</span></td>
+            <td>44.62</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="foot-note">
+      HallusionBench 有三个官方指标：<strong>aAcc</strong>(逐题准确率，最宽松)、
+      <strong>fAcc</strong>(同一张图的题必须全对)、<strong>qAcc</strong>(同一问题在不同图上必须全对，最严格)——
+      本表主列用 aAcc，副行标出 fAcc / qAcc。多数论文/榜单引用的"HallusionBench"分数用的是更严格
+      的 qAcc，量级会明显更低；如果要和外部数字对齐，请优先用 qAcc 这一列，不要用主列的 aAcc——
+      即便如此，本表所有 2B/4B 变体的 qAcc 都在 43–53 区间，仍未确认能对上你引用的 VA-OPD 论文
+      "2B Instruct 52.6" 这个数字具体对应哪个 checkpoint / 版本，待你确认来源后再核对。
+      <br />
+      <sup>§</sup> contrast-标准的 BLINK(66.86)、baseline(67.18)、contrast-保守(66.96)三者差距都在种子噪声量级内(~0.3pp)，
+      谁高谁低没有统计意义，baseline 最高不代表训练在这一项上"输了"。
+      <br />
+      <strong>VisionOPD 行的来源已核实</strong>（2026-07-13）：用你确认的 checkpoint 路径
+      （<code>/mnt/bn/.../yijiangli/project/opsd/Vision-OPD/checkpoints/Vision-OPD-Qwen3-VL-4B-Instruct/global_step_65</code>）
+      重新跑了一遍全量评测，和此前"来源存疑"的 `visionopd_yijiang_4B_VOPD` 输出（7-bench 74.38）几乎完全吻合(74.40)——
+      证实那组历史数据确实来自这个 checkpoint，之前的存疑标记已撤销。
+      <br />
+      <sup>¶</sup> baseline(44.14)和 VisionOPD(52.90)的 ZoomBench 是历史 v3-fixed native pipeline 数字；
+      GRPO(53.25)/contrast-保守(43.79)/contrast-标准(44.62)三个是最新 canonical GPT-judge pipeline，
+      彼此可直接比较——**GRPO 4B 在 ZoomBench 上明显领先，contrast 两个变体都低于 baseline 的 v3-fixed 参照值**，
+      和 2B 上"两个 contrast 都低于 base"的模式一致。
+      &nbsp;琥珀色 = 同一张表里该列最优值。
+    </p>
+
+    <h3 style="font-size:14px; text-transform:uppercase; letter-spacing:0.06em; color:var(--ink-faint); margin:32px 0 12px;">Vision-OPD 论文官方数字（2026-07-15 用户提供，作对照锚点）</h3>
+    <div class="table-scroll">
+      <table class="results">
+        <thead>
+          <tr>
+            <th>Method</th><th>Param</th>
+            <th>V*Bench</th><th>ZoomBench</th><th>HRBench4K</th><th>HRBench8K</th><th>MME-RW</th><th>MME-RW-CN</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="model-name">Qwen3-VL-Instruct<span class="sub">官方 baseline</span></td><td>4B</td>
+            <td>81.68</td><td>44.97</td><td>78.50</td><td>76.25</td><td>63.27</td><td>62.92</td>
+          </tr>
+          <tr class="hl">
+            <td class="model-name">Vision-OPD-Qwen3<span class="sub">官方</span></td><td>4B</td>
+            <td>84.82</td><td>53.49</td><td>81.50</td><td>77.00</td><td>68.02</td><td>68.89</td>
+          </tr>
+          <tr>
+            <td class="model-name">Qwen3-VL-Instruct<span class="sub">官方 baseline</span></td><td>8B</td>
+            <td>84.82</td><td>42.96</td><td>79.63</td><td>75.25</td><td>63.19</td><td>64.61</td>
+          </tr>
+          <tr>
+            <td class="model-name">Vision-OPD-Qwen3<span class="sub">官方</span></td><td>8B</td>
+            <td>89.53</td><td>53.02</td><td>83.00</td><td>79.50</td><td>67.03</td><td>68.96</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="foot-note" style="margin-top:10px;">
+      <strong>官方数字已用官方 eval code + 官方 checkpoint（yijiangli step65）完整复现</strong>
+      （2026-07-15/16）：HRBench4K 81.25 vs 官方81.50、HRBench8K 77.50 vs 77.00、V*Bench 85.34 vs 84.82
+      ——±0.5pp 内全部吻合（ZoomBench 复刻 48.52 vs 官方 53.49，-5pp 的一致偏移来自 judge 模型差异：
+      论文原始配置是 Qwen3-30B judge，复刻用 Azure GPT judge；两模型相对差距完好保持）。同一官方口径下
+      contrast-标准/保守-4B 也已补测：V* 83.77/84.82、HRBench4K 81.12/79.38、HRBench8K 77.00/77.62、
+      ZoomBench 43.08/42.01——HRBench/V* 与官方 VOPD 方法同档，ZoomBench 上 bbox-crop teacher 的优势真实存在。
+      MME-RW 官方口径也已跑齐（2026-07-16）：base 62.78/缺CN、VOPD 67.78/66.93、contrast-标准 65.79/64.31、
+      contrast-保守 64.69/64.12（EN/CN）——contrast 两模型居 base 与 VOPD 之间，EN/CN 排序一致；
+      完整口径矩阵见 eval_pipeline_matrix artifact。
+      <br />
+      <strong>"本仓库 VLMEvalKit 数字比官方低 ~5pp（HRBench）"的根因已定位：prompt 风格，不是图像处理
+      也不是采样参数。</strong>排除过程：checkpoint 的 preprocessor 默认就是 16.7M 像素上限（HRBench4K
+      原图 16.26M 不会被缩）、VLMEvalKit 客户端 PNG 无损直传；把采样参数+mm_processor_kwargs 全部对齐后
+      HRBench 仍是 76 档（76.25/73.88）。真正差异：官方 prompt（"Select from the following choices."）
+      诱导模型<strong>先推理再作答</strong>（回答中位数 262 字符），VLMEvalKit 的 MCQ 模板尾部
+      "Please select the correct answer from the options above" 诱导<strong>直接吐选项字母</strong>
+      （中位数 15 字符）——同 checkpoint 同 800 题，两边答案字母仅 78.9% 一致，CoT-then-answer 在
+      高分辨率感知题上稳定高 ~5pp。跨管线比较 HRBench 数字时必须声明 prompt 风格。
+    </p>
+  </section>
+
+  <!-- ============ QWEN3.5-4B (NEW BASELINE MODEL FAMILY) ============ -->
+  <section class="wrap-wide">
+    <div class="section-head wrap" style="padding:0; max-width:none;">
+      <p class="eyebrow">Benchmark 结果 —— Qwen3.5-4B（新底座，2026-07-14 新增）</p>
+      <h2 class="section-title">换到 Qwen3.5-4B 底座后的结果</h2>
+      <p class="section-sub">
+        Qwen3.5-4B（<span class="mono">Qwen3_5ForConditionalGeneration</span>，线性注意力 + 全词表大小
+        248,320）是本仓库新支持的底座，环境栈（torch 2.10.0 / vllm 0.18.0 / transformers 5.5.0，见
+        <code>requirements_qwen35.txt</code>）和 Qwen3-VL 不通用。目前只有 <strong>visionopd</strong>
+        （另一台机器，trial_id=301761390）跑完了完整训练+评测；<strong>contrast-标准/保守</strong>
+        （本机，trial_id=301683547）还在训练中，全词表蒸馏（RA-VAD 的硬性要求，不能用 top-k 省算力，见下方
+        脚注）单步约1000秒，8卡跑62步预计每阶段14~17小时，数字会陆续补上。
+        训练 len<sup>ℓ</sup>（同主表脚注约定，未标=默认8192）：本表 visionopd / baseline(repo数据) /
+        contrast-标准/保守(repo数据) 都是默认 8192；已完成待补进表的 baseline×virl39k 和 GRPO×virl39k
+        是 6144，contrast-标准×sr1(90步) 是 4096（Qwen3.5 的 248K 大词表让 sr1 的 OOM 比 Qwen3-VL 上更严重，
+        6144 都扛不住）。
+      </p>
+    </div>
+
+    <h3 style="font-size:14px; text-transform:uppercase; letter-spacing:0.06em; color:var(--ink-faint); margin:0 0 12px;">7-benchmark 结果表</h3>
+    <div class="table-scroll">
+      <table class="results">
+        <thead>
+          <tr>
+            <th>模型</th>
+            <th>BLINK</th><th>MMStar</th><th>MMBench<br>DEV_EN</th><th>VStar<br>Bench</th>
+            <th>MathVista<br>MINI</th><th>HRBench<br>4K</th><th>HRBench<br>8K</th>
+            <th>7-bench<br>平均</th>
+            <th>POPE</th><th>HallusionBench<br><span style="font-weight:400">平均 (aAcc / fAcc / qAcc)</span></th><th>ZoomBench</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="model-name">baseline<span class="sub">Qwen3.5-4B，原始未训练（2026-07-16 mlx A1）</span></td>
+            <td>66.91</td><td>72.67</td><td>80.76</td><td>84.29</td><td>80.70</td><td>86.12</td><td>82.00<sup>✚</sup></td>
+            <td>79.06</td><td>83.11</td>
+            <td class="triple"><span class="a">62.45</span><span class="fq">74.66 / 56.65 / 56.04</span></td>
+            <td>52.43</td>
+          </tr>
+          <tr class="hl">
+            <td class="model-name">VisionOPD<span class="sub">trial301761390 · step62（另一台机器）</span></td>
+            <td>62.65</td><td>70.93</td><td>81.79</td><td>86.91</td><td class="win">79.20</td><td>82.38</td><td>72.0<sup>♦</sup></td>
+            <td class="win">76.55</td><td>89.17</td>
+            <td class="triple"><span class="a win">57.35</span><span class="fq">71.08 / 51.73 / 49.23</span></td>
+            <td class="win">59.05</td>
+          </tr>
+          <tr>
+            <td class="model-name">baseline answer-hint<span class="sub">本仓库数据 · step62 · trial301761390（2026-07-16 eval补齐）</span></td>
+            <td>62.49</td><td>70.73</td><td>81.44</td><td>85.34</td><td>70.80</td><td>82.75</td><td>71.62<sup>⊘</sup></td>
+            <td>75.03</td><td>86.90</td>
+            <td class="triple"><span class="a">57.96</span><span class="fq">71.08 / 51.16 / 51.65</span></td>
+            <td class="dim">待跑</td>
+          </tr>
+          <tr>
+            <td class="model-name">baseline answer-hint<span class="sub">virl39k-filtered · step145 · trial301761390（2026-07-16 eval补齐）</span></td>
+            <td>62.76</td><td>72.47</td><td>79.04</td><td>82.20</td><td class="win">79.10</td><td>81.75</td><td>72.50<sup>⊘</sup></td>
+            <td>75.69</td><td>89.09</td>
+            <td class="triple"><span class="a">60.16</span><span class="fq">73.61 / 53.47 / 53.41</span></td>
+            <td class="dim">待跑</td>
+          </tr>
+          <tr>
+            <td class="model-name">contrast-保守<span class="sub">trial301683547 · step62（mlx A3，HR8K 干净口径）</span></td>
+            <td>67.33</td><td class="win">74.07</td><td class="win">85.05</td><td class="win">85.34</td><td class="win">82.40</td><td>86.25</td><td>81.25</td>
+            <td class="win">80.24</td><td class="win">89.31</td>
+            <td class="triple"><span class="a">—</span><span class="fq">aAcc 74.97</span></td>
+            <td>53.73</td>
+          </tr>
+          <tr>
+            <td class="model-name">contrast-标准<span class="sub">trial301683547 · step62（2026-07-16 mlx A2）</span></td>
+            <td class="win">67.54</td><td class="win">73.47</td><td class="win">84.97</td><td>84.29</td><td class="win">81.40</td><td class="win">86.88</td><td>81.63<sup>✚</sup></td>
+            <td>80.03</td><td class="win">89.12</td>
+            <td class="triple"><span class="a">61.93</span><span class="fq">75.08 / 55.78 / 54.95</span></td>
+            <td>52.54</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout" style="margin-top:14px; border-left:3px solid var(--accent); background:var(--paper-raised); border:1px solid var(--line); border-left-width:3px; border-radius:0 8px 8px 0; padding:14px 18px;">
+      <strong>Qwen3.5 三行齐后的结论（HR8K 干净口径，2026-07-17 更新）：contrast 两配置同水位微超 vanilla，保守略高。</strong>
+      <p style="margin:8px 0 0; max-width:none; font-size:13.5px; color:var(--ink-soft);">
+        7-bench：vanilla 79.06 / 标准 80.03（+0.97）/ <strong>保守 80.24（+1.18）</strong>；标准的可见增益集中在
+        MMBench(+4.2) 和 POPE(+6.0)，保守在 MathVista/V*/MMStar 微高。ZoomBench：52.4/52.5/53.7 同档，均低于
+        GRPO(57.28) 和 visionopd(59.05)。VisionOPD 行 7-bench(76.55) 低于 contrast，但其 V* 86.91/Zoom 59.05
+        突出（注意其 HR8K 72.0 仍是待重跑口径⊘）。vanilla V* 84.29 与官方论文完全一致，佐证评测链路对齐。
+      </p>
+    </div>
+    <p class="foot-note" style="margin-top:10px;">
+      <sup>✚</sup> HR8K 干净重跑值（`REQUEST_TIMEOUT=900 RETRY=4`，0/800 失败）：vanilla 74.25→<strong>82.00</strong>、
+      contrast-标准 75.75→<strong>81.63</strong>——污染拉低幅度实测 6-8pp（比最初估的 3-6pp 更重）。
+      <br />
+      <sup>⊘</sup> <strong>仍带污染待重跑的 HR8K</strong>：answer-hint×repo(71.62)、answer-hint×virl39k(72.50)、
+      visionopd_rerun(72.0/73.63)——同样偏低 6-8pp 量级，引用前必须重跑；相应行 7-bench 平均也偏低。
+      <br />
+      <sup>#</sup> Qwen3.5-4B 的 contrast/RA-VAD 训练比同机制的 Qwen3-VL-4B 慢一个数量级不止：全词表蒸馏对每个
+      生成 token 都要保留整个 248K 词表的 logits（这一步单是教师端一个方向的 logits 张量粗估就有 ~1.2TB，
+      RA-VAD 还要过 hi/ctrl 两个方向），Ray 对象存储装不下、大量溢出到磁盘（单次训练前3步已观测到溢出
+      &gt;500GB），是已确认的性能瓶颈，不是配置错误。这个限制是 RA-VAD 机制本身的硬约束
+      （<span class="mono">verl/workers/actor/dp_actor.py</span> 里 <span class="mono">ra_vad=True</span>
+      时若传非 null 的 <span class="mono">distillation_topk</span> 会直接抛
+      <span class="mono">ValueError</span>），visionopd（<span class="mono">ra_vad=False</span>）不受影响，
+      用的是 top-100，这也是它训练明显更快、能第一个跑完的原因之一。
+    </p>
+
+    <h3 style="font-size:14px; text-transform:uppercase; letter-spacing:0.06em; color:var(--ink-faint); margin:32px 0 12px;">Vision-OPD 论文官方 Qwen3.5-4B 完整表（2026-07-16 用户提供）</h3>
+    <div class="table-scroll">
+      <table class="results">
+        <thead>
+          <tr>
+            <th>Method</th>
+            <th>V*Bench</th><th>ZoomBench</th><th>HRBench4K</th><th>HRBench8K</th>
+            <th>MMVP</th><th>CV-Bench</th><th>MMStar</th><th>POPE</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="model-name">Vanilla<span class="sub">官方</span></td>
+            <td>84.29</td><td>47.69</td><td>84.38</td><td>80.13</td><td>76.67</td><td>87.13</td><td>78.53</td><td>88.28</td>
+          </tr>
+          <tr>
+            <td class="model-name">SFT on Self-Teacher<span class="sub">官方</span></td>
+            <td>78.01</td><td>54.67</td><td>79.75</td><td>76.38</td><td>78.33</td><td>85.70</td><td>68.40</td><td>87.48</td>
+          </tr>
+          <tr>
+            <td class="model-name">GRPO<span class="sub">官方</span></td>
+            <td>83.77</td><td>55.38</td><td>82.63</td><td>78.25</td><td>79.33</td><td>87.24</td><td>70.60</td><td>86.37</td>
+          </tr>
+          <tr>
+            <td class="model-name">DAPO<span class="sub">官方</span></td>
+            <td>84.82</td><td>55.74</td><td>84.00</td><td>78.00</td><td>79.33</td><td>86.95</td><td>72.27</td><td>86.62</td>
+          </tr>
+          <tr>
+            <td class="model-name">OPSD<span class="sub">官方</span></td>
+            <td>85.34</td><td>53.85</td><td>82.25</td><td>79.38</td><td>78.68</td><td class="win">87.27</td><td>75.07</td><td>88.83</td>
+          </tr>
+          <tr class="hl">
+            <td class="model-name">Vision-OPD (Ours)<span class="sub">官方</span></td>
+            <td class="win">92.15</td><td class="win">59.76</td><td class="win">84.50</td><td class="win">80.38</td><td class="win">79.67</td><td class="win">87.27</td><td class="win">79.60</td><td class="win">89.14</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="foot-note" style="margin-top:10px;">
+      与本仓库同 checkpoint 复测（VLMEvalKit 默认口径）的对齐情况：ZoomBench 59.05 vs 59.76、POPE 89.17 vs
+      89.14——<strong>两项完美对齐</strong>；V*Bench 86.91 vs 92.15(-5.2)、HRBench8K 73.63 vs 80.38(-6.8)、
+      MMStar 70.93 vs 79.60(-8.7)——<strong>三项显著偏低，模式与 Qwen3-VL-4B 上已实锤的"MCQ prompt
+      直答 vs 带内容作答"根因一致</strong>。正在用官方 pipeline（mm-eval 代码 + conda qwen35 环境）复跑
+      vstar/hrbench-4k/hrbench-8k 验证（2026-07-16 排队），结果回填此处。注意官方 Vanilla 的 HRBench4K/8K
+      (84.38/80.13) 也显著高于本仓库对 Qwen3.5 底座的直答口径预期，进一步支持 prompt 风格解释。
+    </p>
+
+    <h3 style="font-size:14px; text-transform:uppercase; letter-spacing:0.06em; color:var(--ink-faint); margin:32px 0 12px;">和 Vision-OPD 论文官方数字的对比（visionopd checkpoint）</h3>
+    <div class="chart-card">
+      <div class="chart-legend">
+        <span><span class="dot" style="background:var(--ink-faint);"></span>官方 Vanilla（未训练）</span>
+        <span style="margin-left:16px;"><span class="dot" style="background:var(--win);"></span>官方 Vision-OPD（论文）</span>
+        <span style="margin-left:16px;"><span class="dot" style="background:var(--accent);"></span>本仓库复现（Qwen3.5-4B visionopd）</span>
+      </div>
+      <div class="chart-scroll chart-svg-wrap">
+        <svg class="chart" viewBox="0 0 900 320" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Qwen3.5-4B 上官方 Vision-OPD 论文数字 vs 本仓库复现，6 个共有 benchmark 对比">
+          <line class="grid-line" x1="40" y1="280.0" x2="880" y2="280.0" />
+          <text class="axis-label" x="32" y="284.0" text-anchor="end">0</text>
+          <line class="grid-line" x1="40" y1="228.0" x2="880" y2="228.0" />
+          <text class="axis-label" x="32" y="232.0" text-anchor="end">20</text>
+          <line class="grid-line" x1="40" y1="176.0" x2="880" y2="176.0" />
+          <text class="axis-label" x="32" y="180.0" text-anchor="end">40</text>
+          <line class="grid-line" x1="40" y1="124.0" x2="880" y2="124.0" />
+          <text class="axis-label" x="32" y="128.0" text-anchor="end">60</text>
+          <line class="grid-line" x1="40" y1="72.0" x2="880" y2="72.0" />
+          <text class="axis-label" x="32" y="76.0" text-anchor="end">80</text>
+          <line class="grid-line" x1="40" y1="20.0" x2="880" y2="20.0" />
+          <text class="axis-label" x="32" y="24.0" text-anchor="end">100</text>
+          <rect x="68.4" y="60.8" width="29.3" height="219.2" fill="var(--ink-faint)" rx="2" />
+          <text class="bar-val" x="83.1" y="56.8" text-anchor="middle" font-size="10">84.3</text>
+          <rect x="101.7" y="40.4" width="29.3" height="239.6" fill="var(--win)" rx="2" />
+          <text class="bar-val" x="116.4" y="36.4" text-anchor="middle" font-size="10">92.2</text>
+          <rect x="135.1" y="54.0" width="29.3" height="226.0" fill="var(--accent)" rx="2" />
+          <text class="bar-val" x="149.7" y="50.0" text-anchor="middle" font-size="10">86.9</text>
+          <text class="bar-label" x="110.0" y="298.0" text-anchor="middle">V*Bench</text>
+          <rect x="208.4" y="156.0" width="29.3" height="124.0" fill="var(--ink-faint)" rx="2" />
+          <text class="bar-val" x="223.1" y="152.0" text-anchor="middle" font-size="10">47.7</text>
+          <rect x="241.7" y="124.6" width="29.3" height="155.4" fill="var(--win)" rx="2" />
+          <text class="bar-val" x="256.4" y="120.6" text-anchor="middle" font-size="10">59.8</text>
+          <rect x="275.1" y="126.5" width="29.3" height="153.5" fill="var(--accent)" rx="2" />
+          <text class="bar-val" x="289.7" y="122.5" text-anchor="middle" font-size="10">59.0</text>
+          <text class="bar-label" x="250.0" y="298.0" text-anchor="middle">ZoomBench</text>
+          <rect x="348.4" y="60.6" width="29.3" height="219.4" fill="var(--ink-faint)" rx="2" />
+          <text class="bar-val" x="363.1" y="56.6" text-anchor="middle" font-size="10">84.4</text>
+          <rect x="381.7" y="60.3" width="29.3" height="219.7" fill="var(--win)" rx="2" />
+          <text class="bar-val" x="396.4" y="56.3" text-anchor="middle" font-size="10">84.5</text>
+          <rect x="415.1" y="65.8" width="29.3" height="214.2" fill="var(--accent)" rx="2" />
+          <text class="bar-val" x="429.7" y="61.8" text-anchor="middle" font-size="10">82.4</text>
+          <text class="bar-label" x="390.0" y="298.0" text-anchor="middle">HRBench4K</text>
+          <rect x="488.4" y="71.7" width="29.3" height="208.3" fill="var(--ink-faint)" rx="2" />
+          <text class="bar-val" x="503.1" y="67.7" text-anchor="middle" font-size="10">80.1</text>
+          <rect x="521.7" y="71.0" width="29.3" height="209.0" fill="var(--win)" rx="2" />
+          <text class="bar-val" x="536.4" y="67.0" text-anchor="middle" font-size="10">80.4</text>
+          <rect x="555.1" y="92.8" width="29.3" height="187.2" fill="var(--accent)" rx="2" />
+          <text class="bar-val" x="569.7" y="88.8" text-anchor="middle" font-size="10">72.0</text>
+          <text class="bar-label" x="530.0" y="298.0" text-anchor="middle">HRBench8K</text>
+          <rect x="628.4" y="75.8" width="29.3" height="204.2" fill="var(--ink-faint)" rx="2" />
+          <text class="bar-val" x="643.1" y="71.8" text-anchor="middle" font-size="10">78.5</text>
+          <rect x="661.7" y="73.0" width="29.3" height="207.0" fill="var(--win)" rx="2" />
+          <text class="bar-val" x="676.4" y="69.0" text-anchor="middle" font-size="10">79.6</text>
+          <rect x="695.1" y="95.6" width="29.3" height="184.4" fill="var(--accent)" rx="2" />
+          <text class="bar-val" x="709.7" y="91.6" text-anchor="middle" font-size="10">70.9</text>
+          <text class="bar-label" x="670.0" y="298.0" text-anchor="middle">MMStar</text>
+          <rect x="768.4" y="50.5" width="29.3" height="229.5" fill="var(--ink-faint)" rx="2" />
+          <text class="bar-val" x="783.1" y="46.5" text-anchor="middle" font-size="10">88.3</text>
+          <rect x="801.7" y="48.2" width="29.3" height="231.8" fill="var(--win)" rx="2" />
+          <text class="bar-val" x="816.4" y="44.2" text-anchor="middle" font-size="10">89.1</text>
+          <rect x="835.1" y="48.2" width="29.3" height="231.8" fill="var(--accent)" rx="2" />
+          <text class="bar-val" x="849.7" y="44.2" text-anchor="middle" font-size="10">89.2</text>
+          <text class="bar-label" x="810.0" y="298.0" text-anchor="middle">POPE</text>
+        </svg>
+      </div>
+      <p class="foot-note">
+        官方数字来自 Vision-OPD 论文报告的 Qwen3.5-4B 结果表（<span class="mono">Vanilla</span> /
+        <span class="mono">Vision-OPD (Ours)</span> 两行）；本仓库复现是同一 <span class="mono">visionopd</span>
+        checkpoint 的评测结果。<strong>ZoomBench(-0.71) / HRBench4K(-2.12) / POPE(+0.03) 基本对得上</strong>，
+        说明模型权重本身大概率没问题；<strong>V*Bench(-5.24) / HRBench8K(-8.4) / MMStar(-8.67) 差距明显</strong>——
+        <sup>♦</sup> <strong>2026-07-15 两次更新，第二次修正了第一次的估算</strong>：完整性扫描（见
+        <span class="mono">docs/eval_integrity_registry.md</span>）先发现这次评测有 56/800 条推理请求直接
+        失败（"Failed to obtain answer via API."，全部被判错），当时**估算**剔除失败题后约 78.5；但随后
+        用同一 checkpoint 在 GPU0 单独干净重跑了一次 HRBench8K（800/800 全部成功，无失败题），**真实结果是
+        72.0**——比原始的 73.00（含56题失败）还低，和 78.5 的估算方向相反，说明"剔除失败题≈更高分"这个
+        估算方法本身不可靠（可能是失败题并非随机分布，或者简单剔除的补全方式有偏）。当前表里 72.0 是
+        干净重跑的真实值，与官方 80.4 的差距是 <strong>-8.4</strong>，仍然是本表里差距最大的几项之一
+        （2026-07-16 另一台机器独立重跑得 73.63，同量级，双重确认差距真实）。
+        MMStar/V*Bench 两项污染数为 0，差距是真实的。<strong>结合 Qwen3-VL-4B 上已实锤的根因
+        （HRBench 跨管线差距 = MCQ prompt 的"直答 vs 带内容作答"风格差异，见 4B 官方数字对照表脚注），
+        这里的差距最可能也是同一个 prompt 风格问题</strong>——待用 <span class="mono">VLMEVAL_MCQ_OFFICIAL_STYLE=1</span>
+        复测验证；presence_penalty 假设退居次要——
+        其中 <strong>MMStar 复现值(70.93)甚至低于官方未训练的 Vanilla(78.53)</strong>——不只是"提升不够"，
+        是这一项上出现了系统性偏低。目前怀疑最大嫌疑是评测采样参数：本仓库评测统一用
+        <span class="mono">presence_penalty=1.5</span>（为压制本仓库自己训练出的退化 checkpoint 的
+        无限复读问题而调），对一个健康、没有复读问题的模型可能反而干扰 MMStar 这类需要精确简短作答的题目；
+        也不排除官方评测走的是完全不同的 harness（论文表里还有 MMVP / CV-Bench，本仓库压根没测这两个）
+        或存在 thinking / 非 thinking 模式差异。<strong>这是待验证的假设，不是定论</strong>——下一步应该用同一
+        checkpoint、去掉 <span class="mono">presence_penalty</span> 用默认采样参数重跑一次 MMStar 做对照。
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ FINDINGS ============ -->
+  <section class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">怎么读这张表</p>
+      <h2 class="section-title">哪些真的动了，哪些没动</h2>
+    </div>
+    <div class="findings">
+      <div class="finding win">
+        <h3>contrast-标准是第一个在 HallusionBench 上超过 base 的变体</h3>
+        <p>69.19 对 68.35（+0.84）。此前所有 RA-VAD 变体——noimg、纯 EMA、attention 加权——在这项指标上相对 base 全部倒退。这是机制设计初衷本该起作用、却一直没兑现的那个维度。</p>
+      </div>
+      <div class="finding win">
+        <h3>MathVista_MINI 是单项提升幅度最大的 benchmark</h3>
+        <p>67.90 对 noimg 的 63.20（+4.7），对 base 的 62.50（+5.4）——比 GRPO 自己用 9.4 倍算力换来的 MathVista 增量（+5.5 相对 base）还要大。这促成了现在正在跑的 virl39k-filtered 后续实验，用来判断这是机制本身的能力还是训练数据本身偏 math。</p>
+      </div>
+      <div class="finding">
+        <h3>MMBench_DEV_EN 是 contrast 仍然落后 base 的地方</h3>
+        <p>77.06 对 78.09——约 1pp 的退步，所有测过的 RA-VAD 变体都有,不是 contrast 独有也没被 contrast 修复。这一点应该如实标出来,不该被"全项胜出"这种概括盖过去。</p>
+      </div>
+      <div class="finding warn">
+        <h3>ZoomBench 这一列口径不统一</h3>
+        <p>2B baseline / GRPO / contrast-标准走的是最新 canonical GPT-judge pipeline；VisionOPD 和 4B 全系都还是 v3-fixed native pipeline 的历史数字，两套 judge 设置不完全一致。contrast-保守和 4B 全系的 ZoomBench 都还没跑，这一列现在还不能直接横向比较。</p>
+      </div>
+      <div class="finding win">
+        <h3>4B 上 contrast-保守反而比标准版更稳</h3>
+        <p>7-bench 平均 77.09 对 76.58，和 2B 上"标准 &gt; 保守"（70.65 vs 69.07）方向相反。4B 标准版在 MMBench_DEV_EN 上明显回落（80.15，全表 4B 组最低），α=1.0 的更强倾斜在 4B 规模上似乎不再是越强越好。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ DATA ABLATION ============ -->
+  <section class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">数据消融 —— 换 math-heavy 训练数据（2026-07-13，进行中）</p>
+      <h2 class="section-title">同一机制换到 virl39k / sr1 数据上会怎样</h2>
+      <p class="section-sub">
+        动机：contrast 机制在 MathVista_MINI 上提升最大，但本仓库训练数据不偏 math。把 GRPO 和
+        contrast-保守/标准分别换到 virl39k-filtered（几何/图表 MCQ 为主，14002 条单图样本）和
+        vision-sr1-filtered（通用 VQA，14355 条）上重训（各 1 epoch，~437-464 步），看 MathVista
+        的增益到底来自机制还是数据题材。<strong>对应的行已经并入上面的 2B 总表</strong>（按训练数据分组），
+        loss 曲线见上方"训练动态"两张图的下面一张，这里只放定性结论。
+      </p>
+    </div>
+
+    <div class="findings">
+      <div class="finding">
+        <h3>GRPO 换 math 数据：综合分升，ZoomBench 大跌</h3>
+        <p>7-bench 71.66（比本仓库数据的 70.19 高 1.47，且只用了 1/3 的算力），MathVista 68.70 也略高。但 ZoomBench 从 47.81 暴跌到 38.34（-9.5pp）——GRPO 的 ZoomBench 优势强依赖训练数据分布，不是机制自带的。</p>
+      </div>
+      <div class="finding">
+        <h3>contrast-保守：换数据后 ZoomBench 差异不大</h3>
+        <p>virl39k(40.36) 和 sr1(40.00) 基本打平，都略低于 noimg-virl39k 的 41.54 和 2B base 的 42.49。MathVista 是否有本仓库数据版本(65.30)之上的提升，等 7-benchmark 跑完揭晓——这是数据消融的核心问题。</p>
+      </div>
+      <div class="finding win">
+        <h3>另一个新发现：GRPO(virl39k) 的 HallusionBench 明显好于 GRPO(本仓库)</h3>
+        <p>aAcc 68.45 vs 66.14（+2.31），qAcc 47.03 vs 43.30——GRPO 的幻觉表现同样受训练数据影响很大，之前"GRPO 幻觉指标全面低于 base"的结论只对本仓库数据成立。</p>
+      </div>
+    </div>
+
+    <p class="foot-note" style="margin-top:16px;">
+      同时在跑的还有（结果未出）：4B base 全 9 项基线重测（GPU4，顺带解决文档里 4B base 7-bench 两组数字不一致的问题）、
+      visionopd-4B 和 grpo-4B 的 POPE/HallusionBench 补测（GPU5/6）。
+      <strong>uniform-weight 隔离实验已出结果（2026-07-14）</strong>：7-bench 68.56 vs 带权重的
+      70.65（−2.09pp，超出种子噪声带），结论是外层逐 token 权重仍是必要成分——详见上文
+      "从标量权重到蒸馏 target 本身"一节的更新说明。
+    </p>
+
+  </section>
+
+  <!-- ============ CAVEATS ============ -->
+  <section class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">数据质量</p>
+      <h2 class="section-title">引用前需要再核实的地方</h2>
+    </div>
+    <div class="caveats">
+      <ul>
+        <li><strong>VisionOPD / 4B baseline / 4B GRPO / 4B VisionOPD 都缺 POPE 和 HallusionBench</strong> —— 这几个 checkpoint 从未跑过幻觉类评测，表里标"未测"的格子是真的没有数据,不是省略。</li>
+        <li><strong>全部是单种子结果</strong> —— 没有任何一行数字做过重复种子的误差估计；本项目其他地方测出的 composite 分数种子噪声大约在 ±0.38pp，小于这个量级的差距（比如各变体的 POPE）不应过度解读。</li>
+        <li><strong>ZoomBench 曾经踩过一个自判分 bug，已经修复</strong> —— 早前一版报告用了一个让模型自己给自己判分的脚本，测出 contrast-标准 73.02；复核发现 845 题里有 223 题模型自己在回答正文里明确选错了，轮到自己当裁判时却判"对"。现在这里展示的 43.67 是换成真正的外部 GPT judge 重跑后的结果。</li>
+      </ul>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    Vision-OPD · docs/compare_vaopd_0701.md，Phase 2-核心 第十 / 十一 / 十二轮 · 生成于 2026-07-12
+  </div>
+</footer>
+
+<script>
+const LOSS_DATA = {"contrast_std_virl39k": {"steps": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256, 257, 258, 259, 260, 261, 262, 263, 264, 265, 266, 267, 268, 269, 270, 271, 272, 273, 274, 275, 276, 277, 278, 279, 280, 281, 282, 283, 284, 285, 286, 287, 288, 289, 290, 291, 292, 293, 294, 295, 296, 297, 298, 299, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 312, 313, 314, 315, 316, 317, 318, 319, 320, 321, 322, 323, 324, 325, 326, 327, 328, 329, 330, 331, 332, 333, 334, 335, 336, 337, 338, 339, 340, 341, 342, 343, 344, 345, 346, 347, 348, 349, 350, 351, 352, 353, 354, 355, 356, 357, 358, 359, 360, 361, 362, 363, 364, 365, 366, 367, 368, 369, 370, 371, 372, 373, 374, 375, 376, 377, 378, 379, 380, 381, 382, 383, 384, 385, 386, 387, 388, 389, 390, 391, 392, 393, 394, 395, 396, 397, 398, 399, 400, 401, 402, 403, 404, 405, 406, 407, 408, 409, 410, 411, 412, 413, 414, 415, 416, 417, 418, 419, 420, 421, 422, 423, 424, 425, 426, 427, 428, 429, 430, 431, 432, 433, 434, 435, 436, 437], "loss": [0.32942546205595136, 0.2607778511786213, 0.2964027705602348, 0.2930552725059291, 0.3046040065431347, 0.27531137107871473, 0.26593134684177744, 0.32055424976473057, 0.25417274752787006, 0.2768594578374177, 0.20355264710572857, 0.21379109607854235, 0.20751104154624045, 0.19237532967235893, 0.20260015176609159, 0.22397297240483266, 0.183730713208206, 0.16558319182756048, 0.19444123236462474, 0.19892176772312573, 0.19663558163059255, 0.19105655925037962, 0.20111777846856665, 0.1656808825985839, 0.1603062619299938, 0.1766479667276144, 0.1543863648160671, 0.18803973821923137, 0.192199207105053, 0.17659661852909875, 0.15440688414188722, 0.21073677677971622, 0.17853731091599911, 0.20593138671635342, 0.2005216560016076, 0.21106028502496582, 0.182793287637954, 0.1867022126292189, 0.20418939289326468, 0.18585961874729645, 0.20301455158429843, 0.2127826961999138, 0.20074482068109017, 0.20968048026164374, 0.19565095248011252, 0.20669756007070345, 0.22820040540924916, 0.20327728781073043, 0.2446882096895327, 0.2203303836674119, 0.22035467236613235, 0.19582835328765208, 0.26162559135506547, 0.22761678835377097, 0.22546130007443327, 0.21898864721879363, 0.21937521166789034, 0.26484419498592615, 0.2974490529159084, 0.24514024405895424, 0.24814352338823178, 0.2649522595262776, 0.24715247680433095, 0.24658507845985395, 0.27735657951173687, 0.26694626469785965, 0.22024007809037963, 0.2547288144317766, 0.24670434060196084, 0.33483874968563515, 0.26512277118551236, 0.26331208029296244, 0.26314133273748064, 0.26014861565393704, 0.289652287416781, 0.34552721679210663, 0.2898552310653031, 0.30742645814704406, 0.2931273650222769, 0.29970575706101954, 0.2851513963347922, 0.3067754130655279, 0.3128753906736771, 0.3204788186897834, 0.34149212211680907, 0.34121688338927925, 0.3025456248239303, 0.32294323109090334, 0.3223544867554059, 0.358400678805386, 0.29328493370364106, 0.3338112252919624, 0.30997141590341926, 0.3627380689140409, 0.3624867024676254, 0.3431410082460692, 0.34121895084778464, 0.5022227881321062, 0.35117012572785217, 0.32308808861610794, 0.37192294901857775, 0.38080007877821725, 0.3592080144832531, 0.34431432785155874, 0.39403936546295876, 0.3362159300595522, 0.3703593921381979, 0.36208765495878953, 0.3666024001625677, 0.35616418098409963, 0.3294203629096349, 0.41364897306387627, 0.3398112721430758, 0.4166776438554128, 0.3712340483131509, 0.4388877047846715, 0.3582047329594692, 0.417079150211066, 0.3572011772387972, 0.4259259301082542, 0.43698107528810703, 0.41138258079687756, 0.3723802034898351, 0.4288707869127393, 0.41414954389135045, 0.36708239442668855, 0.40579339512623847, 0.4597060433588921, 0.4380764889841278, 0.43347027711570263, 0.4330322869742911, 0.44378949375823146, 0.40520737739279866, 0.3852218086831272, 0.4492869875393808, 0.4825308937579394, 0.3836166674736887, 0.3967538435632984, 0.41402266019334394, 0.4678828977048397, 0.567096154903993, 0.5077533144503832, 0.4464143149089069, 0.44737194711342454, 0.4660735748087367, 0.41767335465798777, 0.4922682484611869, 0.48615593098414445, 0.5356082750950009, 0.5062464391036581, 0.4284307652463516, 0.4778043319626401, 0.5198002005927266, 0.4775961531170954, 0.5170384709102411, 0.5614863261580467, 0.39710971938135725, 0.4537385723864039, 0.44300168302531046, 0.3953224149687837, 0.44851443171501165, 0.5151094920778027, 0.4299660040220867, 0.5537210635375232, 0.5626150333943467, 0.4358702635702988, 0.4858597074635327, 0.43400672574837995, 0.4295575668414434, 0.5263575674034655, 0.4805609549706181, 0.5462131469200056, 0.47422371214876574, 0.421243967100357, 0.5397493434914699, 0.5155100873671472, 0.4764105378805349, 0.4403046605487665, 0.5965598233354589, 0.43913505156524485, 0.7409613141790032, 0.4548120593341688, 0.5625204954606792, 0.5376296218795081, 0.5751509141797821, 0.5545534867948543, 0.46118331669519347, 0.5447137011215091, 0.4879679974789421, 0.4721472997528811, 0.4999589376772444, 0.5993242290957521, 0.5662990161217749, 0.648601698378722, 0.45540352740014595, 0.6343373808388909, 0.635160015275081, 0.503719160022835, 0.5549748853469889, 0.5126368234244486, 0.7626749890235562, 0.6159613565541804, 0.5493311878914635, 0.6505698473192751, 0.5454613727827866, 0.6222491523561379, 0.6643949531329175, 0.7439309616262715, 0.5481672597428162, 0.48875616560690105, 0.5892066066153347, 0.5171694409412642, 0.5568042043596506, 0.5999297092979153, 0.6486964266126355, 0.6074070394194375, 0.4885259037837387, 0.6123044473739963, 0.5364847010932864, 0.5599456975857418, 0.6215740071299176, 0.5983560881577432, 0.578918013566484, 0.6453489743483563, 0.7762046013958752, 0.6515428850737711, 0.7157218994883201, 0.6350129273099204, 0.6173856101619701, 0.6648084384699662, 0.5620553942086797, 0.7502634325064719, 0.7247296436689795, 0.5876228666553894, 0.6119677893196543, 0.5810470307866732, 0.6281909003543358, 0.5713715862172345, 0.667760924436152, 0.6160086286254227, 0.7494846053111057, 0.7657221915821234, 0.5768205184334269, 0.5732011765552063, 0.6741917869076133, 0.7137784130560855, 0.6070643556304276, 0.680940843032052, 0.5921060143349072, 0.7279999246820807, 0.7029638336971402, 0.9884301273462672, 0.7203616425395012, 0.7453004367028674, 0.5767816502290468, 0.7878352023350697, 0.6128612295724452, 0.5952647275601824, 0.6268893000669777, 0.6429641738844415, 0.8634934173896909, 0.714224577570955, 0.7361801853403449, 0.7590390251328548, 0.6088737219882508, 0.6653234896560509, 0.897538241930306, 0.7932009532426794, 0.7346092664326231, 0.7351612450244526, 0.6805303295453391, 0.8198383624354999, 0.6929457422035435, 0.7499199071899056, 0.6716560594116648, 0.7517858701758087, 0.7152134845964611, 0.8447157250096401, 0.7235585687061151, 0.7868227952470382, 0.7425498352386057, 0.7305246824398637, 0.8339362721890211, 0.9008735486616691, 0.755713649559766, 0.6685381857678294, 0.8106217707196872, 0.8347246396976213, 0.6882934441479545, 0.7767479008374115, 0.792416791121165, 0.752694708450387, 0.9055706975050272, 0.7814259856628876, 0.6602953526501855, 0.9437344190664589, 1.0216573200499017, 0.6774592837318778, 0.8757032168408235, 0.8633058726166687, 0.7450382209693392, 1.0393994551462433, 0.8794050561264157, 0.8151786235782008, 0.8726076264865695, 0.9078556206077337, 0.6765934141973655, 0.7686627212290963, 0.8863852699287236, 0.9495806507766247, 0.8857529495532315, 0.8188153359418114, 0.9775840863585472, 0.9317922719443839, 0.7849213917118808, 0.989346281780551, 0.7491594132346412, 0.8463627592039604, 0.7322903717868029, 0.9619526307409009, 0.8830187722730141, 0.7855038603302092, 0.8257068746412795, 0.8106062433992823, 0.976998484072586, 0.7063641270312171, 0.8230140915450951, 0.9674891106163462, 0.9329992613444726, 0.8528712146605054, 0.9565905155614018, 0.8902562097646296, 0.8670592505174379, 1.1164749522383013, 0.9654830074869096, 0.9774635570744673, 1.1370434385413923, 1.3127412231018147, 0.8472431384337445, 0.824197575993215, 0.800615459214896, 0.8095598015934229, 0.9779586346509557, 0.9747025575488806, 1.073293889251848, 0.9117401911256215, 0.7891548125383754, 1.1274561788886786, 1.1147886666779718, 1.1497082502270741, 0.9851322001777589, 1.0418085924660168, 0.9492819916146498, 1.2046578576167426, 0.9020621514258286, 1.0437075983112056, 1.0226171100512147, 0.8095064226848385, 1.1259049431731305, 1.000688415641586, 1.0874039358459413, 1.075004919897765, 0.8037222687465451, 0.9418673816447456, 0.9852815990646681, 1.171663421827058, 1.1891835181352994, 1.2429734428102772, 1.1296942454452317, 1.161812700641652, 1.1153793665580454, 1.0768659083793561, 1.1409437988574307, 1.2249429328367114, 1.3649104125797749, 0.9164488973716896, 1.210584066497783, 1.421668491481493, 1.1177162767077489, 1.1526365283255777, 0.8260792753038307, 0.962693912597994, 1.1357833618919055, 1.3018733149704833, 1.027841554954648, 1.5513497361292443, 1.2773518160295985, 1.2948325130467615, 1.0402542520314455, 1.0759072328607242, 1.1390182736019292, 1.3754339730367064, 1.5663207167138657, 1.041516781784594, 1.053188419745614, 0.9996414040215312, 0.9748120922595263, 1.2591557819396257, 1.350547700499495, 1.369992323840658, 0.9890039709086221, 1.2278672554530203, 1.097904956123481, 1.585316177768012, 1.20196566482385, 1.4267899123951795, 1.1097826988746724, 1.3150742767999573, 1.3956254829342165, 1.2110373762746651, 1.1883113238339622, 1.474158213629077, 1.0503577493752043, 1.314437779597938, 1.2386482696359358, 1.3638225390265386, 1.179389352289339, 1.1054798581947884, 1.0577358612790704, 1.117350434573988, 1.382349459764858, 0.9818154460129638, 1.3006808285911877, 1.527540447500845, 1.4420408190538487, 1.3672570372000337, 1.2362128063105047, 1.273820575947563, 1.1513126107553644, 1.285284905694425, 1.2567350889245668, 1.3225737089912097, 1.2382108122110367, 1.2780833644792438, 1.6293411984418829, 1.4454871366421382, 1.48139112132291]}, "contrast_cons_virl39k": {"steps": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256, 257, 258, 259, 260, 261, 262, 263, 264, 265, 266, 267, 268, 269, 270, 271, 272, 273, 274, 275, 276, 277, 278, 279, 280, 281, 282, 283, 284, 285, 286, 287, 288, 289, 290, 291, 292, 293, 294, 295, 296, 297, 298, 299, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 312, 313, 314, 315, 316, 317, 318, 319, 320, 321, 322, 323, 324, 325, 326, 327, 328, 329, 330, 331, 332, 333, 334, 335, 336, 337, 338, 339, 340, 341, 342, 343, 344, 345, 346, 347, 348, 349, 350, 351, 352, 353, 354, 355, 356, 357, 358, 359, 360, 361, 362, 363, 364, 365, 366, 367, 368, 369, 370, 371, 372, 373, 374, 375, 376, 377, 378, 379, 380, 381, 382, 383, 384, 385, 386, 387, 388, 389, 390, 391, 392, 393, 394, 395, 396, 397, 398, 399, 400, 401, 402, 403, 404, 405, 406, 407, 408, 409, 410, 411, 412, 413, 414, 415, 416, 417, 418, 419, 420, 421, 422, 423, 424, 425, 426, 427, 428, 429, 430, 431, 432, 433, 434, 435, 436, 437], "loss": [0.22006470376315215, 0.17973197670653462, 0.19396675998965898, 0.20490325218997898, 0.21595130433949333, 0.18609132582787424, 0.16916807698241126, 0.22561397810932246, 0.15544283506460488, 0.1821419366557772, 0.13728532664633045, 0.13885819690767676, 0.12791456549894065, 0.11822420213138682, 0.12128222392251095, 0.1398085736436769, 0.12437697181788585, 0.11222329202185696, 0.12412007793318482, 0.12362580222543329, 0.11726760247256607, 0.10778503149049357, 0.1083654305160356, 0.10200581290215875, 0.09765196838028109, 0.10807930749918644, 0.09191690841301656, 0.11598312035979082, 0.10889272157025212, 0.1108134722065491, 0.09825140532727042, 0.13216554775135592, 0.09942151528472704, 0.12047529069241136, 0.1533469295439621, 0.14037737124211463, 0.10153230832656845, 0.0983768721537975, 0.11870799174842735, 0.09767205262323841, 0.12025174490797023, 0.11822266364470124, 0.1301147675840184, 0.10574361324931184, 0.10472086690909539, 0.10322246537543833, 0.12534504333355775, 0.10264865718393897, 0.1296833269104051, 0.10983523390799141, 0.11251682889026901, 0.0986154690035619, 0.12932296392197412, 0.12159195239655674, 0.1223076390257726, 0.1200573366562215, 0.10791172184205304, 0.12862393067916855, 0.16335725145957744, 0.1218469135152797, 0.13747168402187526, 0.14386460243258625, 0.13351951423101127, 0.13976169008916864, 0.16140262266465774, 0.14422755420673639, 0.10308810699886331, 0.138327937029923, 0.1288700398678581, 0.18323872638090205, 0.15501161971284697, 0.14929236848062524, 0.14502925670240074, 0.13654296771467972, 0.13665394869167355, 0.2134579417373364, 0.15207502610671025, 0.16185407945886252, 0.16363157681189477, 0.15596415971716243, 0.14350907155312598, 0.17880985556015125, 0.1690101019339636, 0.17653464646233866, 0.17677813201832274, 0.18681740601702285, 0.13505270273890346, 0.15172434489553172, 0.168501868378371, 0.19684111912890026, 0.1580964820847536, 0.1848784862474228, 0.16524251414618144, 0.18548911646939814, 0.1647169286540399, 0.16725744017943117, 0.21999672699409228, 0.2999726526128749, 0.17631709296256304, 0.16073779955816767, 0.1994306107129281, 0.1947119686519727, 0.18186056606161097, 0.17254762692997852, 0.1911639655008912, 0.1783258895544956, 0.16898911725729704, 0.19205269267937788, 0.17888325650710613, 0.1880185145807142, 0.1695091521833092, 0.20389113016426563, 0.1746783604612574, 0.24514713895041496, 0.20628833933733404, 0.22476122563239187, 0.18577465764246884, 0.21360748284496364, 0.19023682848395157, 0.19676071133775014, 0.22171582817099988, 0.20221750756415224, 0.19648349529597908, 0.225686172178636, 0.22236966093381247, 0.18778185709379613, 0.21926100509396446, 0.24196077945331732, 0.22104615500817695, 0.2223491310141981, 0.22510357988843072, 0.2251357789694642, 0.20713850436732173, 0.209102956034864, 0.23688857257366178, 0.27060274690544855, 0.23494910433267552, 0.21377760253380984, 0.23028639199522635, 0.2746030303339163, 0.3175635335113232, 0.26577458406488097, 0.23622485145460814, 0.2619582110783085, 0.24381465872284025, 0.2191154023942848, 0.2628554457332939, 0.20812828198540956, 0.29048681391092634, 0.26310916990041733, 0.23094705088684958, 0.23051746228399372, 0.2573668910966565, 0.26237096854796016, 0.2796468297795703, 0.32049795814479387, 0.21575428161304444, 0.27154191404891515, 0.24697919259779158, 0.24030808941461146, 0.29038904382226366, 0.3080892375825594, 0.22446908600007492, 0.36634793054933357, 0.3337933151051402, 0.2690393269682924, 0.294714133371599, 0.24308789273103076, 0.27607635222375393, 0.29149938615349436, 0.26603123980263865, 0.27361181886711466, 0.24546594809119898, 0.24283128790557382, 0.30602799712990725, 0.2688483474776149, 0.2801573618004719, 0.23816696271145096, 0.34560472021500277, 0.23363619487887866, 0.5503253449375431, 0.2879076049818347, 0.32122054160572594, 0.31498732208274305, 0.31590822067422175, 0.2932496229186654, 0.25877674187843996, 0.32374734043454134, 0.2462793306137125, 0.2646831198750685, 0.2621042540219302, 0.31459659966640174, 0.344037578208372, 0.3552744729289164, 0.23589402631235618, 0.5025513226476809, 0.29109314239273465, 0.2783682252435634, 0.31359556433744734, 0.28695681504905224, 0.40983351281223196, 0.4050868279688681, 0.323277928866446, 0.31223629135638475, 0.30506688045958674, 0.3905284615466372, 0.44796817082290846, 0.4522136428859085, 0.31312679716696346, 0.2658178233541548, 0.34792022616602486, 0.29925327375531197, 0.3229959380502502, 0.3317934848212947, 0.4038542779162526, 0.34141299182859564, 0.28238211238446337, 0.30459103865238524, 0.2985697671150168, 0.36695732308241236, 0.33848519219706463, 0.3904153629361342, 0.34482841325613356, 0.3920200743402044, 0.4596096335444599, 0.3600742133179059, 0.44595487935779, 0.3782266441266984, 0.3884227862581611, 0.37940326930644613, 0.3371160512324422, 0.42229147457207244, 0.45154398532273865, 0.34336478100158274, 0.34163331356830895, 0.3443070800664524, 0.399034091969952, 0.33543337485753005, 0.40176663586559397, 0.3240823212545365, 0.4451219571443895, 0.44215442263521254, 0.3349990639059494, 0.3090954350773245, 0.34679555644591653, 0.404053858636568, 0.35061814861061674, 0.3412040255498141, 0.35529136277424794, 0.40773951906400424, 0.4057396505959332, 0.6576807990980645, 0.44655318915223086, 0.40909782727248967, 0.3529982854767392, 0.5291281274209421, 0.32132770237512887, 0.3302984007168561, 0.357025806248809, 0.3697777139799049, 0.5104899951256812, 0.3854162717858951, 0.42135976875821757, 0.44815977104008203, 0.35742772704300785, 0.38005950410539907, 0.5164426042077443, 0.4597068308697393, 0.37331699820545816, 0.4405535298089186, 0.4054217175580561, 0.4836796696763486, 0.37109872535802424, 0.40069566325594985, 0.3775321639453372, 0.4130990417518964, 0.4105088630070289, 0.5311052914087971, 0.4201635098240028, 0.46623901013905805, 0.44618014215181273, 0.4055976224287103, 0.4618497015908361, 0.4804916499027362, 0.43469882771993684, 0.40580527973361313, 0.5061226147226989, 0.44539400128026807, 0.4136583860963583, 0.4519491236812125, 0.491387055022642, 0.4276211639711012, 0.45561424386687577, 0.4874506851192564, 0.37833533622324467, 0.621027543131883, 0.5710709091896813, 0.39278683912319445, 0.5708046966853242, 0.5323312617062281, 0.41119127146278817, 0.6701552470525107, 0.5000098343783369, 0.5345402704551817, 0.5111174391737829, 0.5622156344664594, 0.3927784392144531, 0.47844243491999805, 0.5132799665443599, 0.5618499124733111, 0.527501411891232, 0.45857844284425175, 0.6706766701924305, 0.5837528261666496, 0.5955010807762543, 0.6196379605680704, 0.5066890391365935, 0.5215366408228874, 0.4761666797567159, 0.5876469007538011, 0.47687222405026364, 0.48265972011722624, 0.4635050897486508, 0.5170824591380855, 0.6674105547523747, 0.40765600837767124, 0.5462928720129033, 0.5804754124643903, 0.47328278639664256, 0.463187076151371, 0.5010356631440421, 0.6043515097505103, 0.5204015243022393, 0.6394441334220271, 0.5343853685383996, 0.5175778963603079, 0.6919963496426742, 0.7151593232216934, 0.5192955148716768, 0.5400102130758266, 0.42389023847257096, 0.45271092001348734, 0.5661201962890725, 0.5414150866369407, 0.673112497664988, 0.5607737327615421, 0.4755198879477879, 0.5971151573273044, 0.6637713434174657, 0.6149951765934627, 0.6040581491154928, 0.5682344643088679, 0.54051896960785, 0.8691647360101343, 0.5290456378522019, 0.5705650026599567, 0.5450726395162443, 0.49055575175831717, 0.6963840592652559, 0.5842590502773722, 0.6163423393542569, 0.5705363779949646, 0.4741855032431582, 0.5545353246076654, 0.5884685812052339, 0.707390145243456, 0.7201160378754139, 0.691423714781801, 0.645244863970826, 0.6701712280822297, 0.6870389059185982, 0.5822695948493978, 0.708893263557305, 0.6666916372875373, 0.7316524439180891, 0.5098466460282604, 0.6579138119705021, 0.8094793531733255, 0.683651599412163, 0.7474520880108079, 0.48686989078608656, 0.577821047200511, 0.6204036126534145, 0.6924198352110884, 0.7214344691795607, 0.8191706077195705, 0.6892510233446956, 0.6629738411866128, 0.6045017197417717, 0.597198852725948, 0.6171945095993578, 0.6740963362778227, 0.8396199448034167, 0.5641785038945576, 0.5895532817424585, 0.5342210954986513, 0.5175942471250892, 0.7557735438458623, 0.753709786493952, 0.7491022748872638, 0.5824444553193947, 0.6806441660349568, 0.5931482186230521, 1.0089908301209412, 0.7211635198133688, 0.9519403132920464, 0.5787814833844702, 0.7784503040214379, 0.7427813848480582, 0.6850520426717897, 0.598483181403329, 0.8586344144617518, 0.5284069219293694, 0.7185638166653614, 0.6622792156413199, 0.7692841608077288, 0.797820781202366, 0.6128111116898557, 0.5674654220541319, 0.5473450065280001, 0.6770677582050364, 0.5386367933048557, 0.787559383859237, 0.9244832632442316, 0.8347392791571716, 0.7847335602467259, 0.6902704862877728, 0.6805889969691634, 0.6512484923005105, 0.6751836434317131, 0.6654174562233189, 0.7349492843883734, 0.713464827897648, 0.6505335988476872, 0.9956821600596111, 0.8720803316682577, 0.7428690677819153]}, "contrast_std_sr1": {"steps": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145], "loss": [0.39499579688223696, 0.3481776153979202, 0.30125391987773276, 0.40166007075458765, 0.422808435279876, 0.3614064425540467, 0.3336741920405378, 0.41759296374705923, 0.3855586353844652, 0.2783414529791723, 0.358686387228469, 0.30325388698838657, 0.31803723191842437, 0.24886191651845968, 0.3040354629047215, 0.27275622702048474, 0.2229117543126146, 0.23696024021288997, 0.24196525639854374, 0.252560479954506, 0.21342077090715367, 0.29085261514410377, 0.26216864019321895, 0.2011379007793342, 0.24293815821874884, 0.2205015857859204, 0.2178601243455584, 0.22465451678726825, 0.19894773955456913, 0.24553084385115653, 0.23183043840496492, 0.29036612692289054, 0.22495664764816564, 0.23514716505693892, 0.22168324259109795, 0.2361299133238693, 0.1916915774345398, 0.21897465262251595, 0.21934194467030466, 0.25662754375177127, 0.27419365143092966, 0.24502419478570425, 0.24489103831971687, 0.2766562962594132, 0.23317364362689358, 0.2612513694912195, 0.23357713005195058, 0.2762184957197557, 0.27120382036082447, 0.24119464242054772, 0.23350001553383964, 0.3084130405137936, 0.29264557974723476, 0.2853188584558666, 0.27395926252938807, 0.2692684355036666, 0.28893488443767035, 0.2849224838428199, 0.3021282619641473, 0.2780094710178673, 0.3458990566432476, 0.30140199551048374, 0.3006627766881138, 0.2987459700088948, 0.30709051550365984, 0.2690644707375517, 0.27409728802740574, 0.309962216221417, 0.300018534452344, 0.3350412563110392, 0.31460419235130155, 0.2978377296434095, 0.2936496688829114, 0.3801848827085147, 0.3346191421151161, 0.3851266434260955, 0.3156612576761594, 0.3659916534088552, 0.3547404577645163, 0.36499372590333223, 0.3443506145849824, 0.35383561719208956, 0.326561983441934, 0.3184687318280339, 0.3624979119437436, 0.3766651043357948, 0.3431102298976233, 0.33154151689571637, 0.4395394936824838, 0.32657842089732486, 0.4030430967298647, 0.35485286684706807, 0.3143204308580607, 0.41317663504742086, 0.3750370990795394, 0.3936307629725585, 0.4004025286994874, 0.46907045040279627, 0.5274740209182104, 0.3961585726744185, 0.3990972663741559, 0.401563762454316, 0.386594868497923, 0.476032467947031, 0.39787192277920735, 0.4621815911183754, 0.38574507413431997, 0.4001968115723381, 0.4105682587251067, 0.40964988448346656, 0.3985384151649972, 0.386817347103109, 0.36092448630370205, 0.4391333057234684, 0.41816501575522125, 0.4475871557369828, 0.4416216954899331, 0.40591569043075043, 0.44356044863040245, 0.3839519616061201, 0.39262919888521236, 0.47982651134952903, 0.4324735989794135, 0.421591038039575, 0.39914895679491263, 0.4069858205815156, 0.42170082187900937, 0.4215580873812238, 0.42875673614131915, 0.46882052145277464, 0.5008710855618119, 0.4714908197056502, 0.5399695475740979, 0.48289281021182734, 0.4364283770943681, 0.4420398826089998, 0.4956147324604292, 0.411309892932574, 0.477570791495964, 0.39844171555402375, 0.4833233188837766, 0.49723852068806684, 0.44104700690756243, 0.4951447783969343, 0.3987130068708211]}, "contrast_cons_sr1": {"steps": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256, 257, 258, 259, 260, 261, 262, 263, 264, 265, 266, 267, 268, 269, 270, 271, 272, 273, 274, 275, 276, 277, 278, 279, 280, 281, 282, 283, 284, 285, 286, 287, 288, 289, 290, 291, 292, 293, 294, 295, 296, 297, 298, 299, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 312, 313, 314, 315, 316, 317, 318, 319, 320, 321, 322, 323, 324, 325, 326, 327, 328, 329, 330, 331, 332, 333, 334, 335, 336, 337, 338, 339, 340, 341, 342, 343, 344, 345, 346, 347, 348, 349, 350, 351, 352, 353, 354, 355, 356, 357, 358, 359, 360, 361, 362, 363, 364, 365, 366, 367, 368, 369, 370, 371, 372, 373, 374, 375, 376, 377, 378, 379, 380, 381, 382, 383, 384, 385, 386, 387, 388, 389, 390, 391, 392, 393, 394, 395, 396, 397, 398, 399, 400, 401, 402, 403, 404, 405, 406, 407, 408, 409, 410, 411, 412, 413, 414, 415, 416, 417, 418, 419, 420, 421, 422, 423, 424, 425, 426, 427, 428, 429, 430, 431, 432, 433, 434, 435, 436, 437, 438, 439, 440, 441, 442, 443], "loss": [0.25542353885248303, 0.26011011749505997, 0.24422457620191074, 0.2236877272371203, 0.25424645092183107, 0.2299607965784768, 0.23905550975662967, 0.2730316977637509, 0.2125929060857743, 0.24375780745564646, 0.2274925980406503, 0.1932987384110068, 0.178024873098669, 0.17775887898945558, 0.14304924178092432, 0.14617749156119925, 0.16479860083200035, 0.15894404552333677, 0.18303344697536278, 0.1904502179628859, 0.22356740614244094, 0.13647882100970793, 0.15918759799872834, 0.1373089390496413, 0.16226365347392857, 0.12629589694552124, 0.16449056565761566, 0.15126755759896088, 0.1255042871149878, 0.1532163496594876, 0.17716548774236196, 0.13473253902823973, 0.14805417135357857, 0.1711775102109338, 0.12469095659131804, 0.1481642311749359, 0.15014271500209964, 0.1378312832287823, 0.14144044745868692, 0.14849093936694166, 0.13098894304130226, 0.11810221377527341, 0.1549823945776249, 0.13589850044809282, 0.15082912277042246, 0.15699322075427818, 0.14212637608094764, 0.15856146106186014, 0.13631959321598214, 0.14025956116771943, 0.18783204998665798, 0.13857860187999904, 0.14150486422780278, 0.14101606099090228, 0.17265392952443412, 0.12591785706657296, 0.14749249517141533, 0.18582530428345004, 0.17183628391164046, 0.18590030698881793, 0.1327790363187281, 0.20941948002049082, 0.2247423450850571, 0.18670362952010083, 0.14663259498775005, 0.17697121769500276, 0.1564861627606054, 0.15560923155862838, 0.16936555074062198, 0.1757534945694109, 0.17176879845404375, 0.18189185186444473, 0.19160402267395207, 0.1939073636118943, 0.2140677489029864, 0.17316640502152347, 0.1782837569480762, 0.16301521072940278, 0.20939804753288627, 0.2132173825521022, 0.1735688118108859, 0.18644498226543268, 0.1879343648518746, 0.20454404825189465, 0.21085841045714915, 0.2368208342619861, 0.17255762211667997, 0.21194632351398468, 0.22186370178436238, 0.16794953666006524, 0.19276370112008104, 0.18042813679979494, 0.20558761285307509, 0.16945587657392025, 0.195981897918197, 0.19186211129029593, 0.20647411909885705, 0.17655321645239988, 0.20365273304438836, 0.20410017184137058, 0.21383055214149257, 0.23321735695935786, 0.25413923524320126, 0.27388257890318835, 0.20377279821938524, 0.2091231835462774, 0.22547511896118522, 0.19470075913704932, 0.270586210458229, 0.20319362978140512, 0.2057067702601974, 0.20661311352159828, 0.22088371477245045, 0.2601952871773392, 0.2314098774610708, 0.2430838228513797, 0.2479497202439234, 0.2280183746091401, 0.23032619668326026, 0.2393703644629568, 0.23238613518575824, 0.2433958640322089, 0.2622601773279409, 0.25521340935180586, 0.24327218703304726, 0.228739128060018, 0.23491492999407154, 0.2444083229250585, 0.28634372826976084, 0.20365767817323407, 0.23157761300293112, 0.27209906023927033, 0.30876709443206585, 0.2823944044454644, 0.25532194351156556, 0.26055187289603055, 0.2687532852093379, 0.2911813852066796, 0.22780047291113686, 0.23798940183284384, 0.24416267685592177, 0.2701161863903204, 0.2868741908265899, 0.27208905907658243, 0.25467257007646066, 0.28732508898247033, 0.2718436050539215, 0.26996865666781866, 0.2625386766934147, 0.2924195841963714, 0.2886661565086494, 0.2664206228607024, 0.266715349862352, 0.30597965357204276, 0.2955159471991161, 0.27295872499234974, 0.26935810750971234, 0.30703859481339657, 0.24942222074605525, 0.24483382049947977, 0.28850080468691885, 0.2616124120928968, 0.2825647746988883, 0.2804162939234326, 0.2820455880525211, 0.27467671952520806, 0.2923599047741542, 0.28014970547519624, 0.30609968599552906, 0.2948235114260266, 0.28210716717876494, 0.3092120595586797, 0.3207896271875749, 0.2886937063497802, 0.3082776182952026, 0.3141061012477925, 0.27548105940998846, 0.3030291484513631, 0.28460232727229595, 0.392243191289405, 0.26987815314593416, 0.48016431275755167, 0.2963687863666564, 0.2835548362151409, 0.3363046613521874, 0.2989440251452228, 0.3714389141338567, 0.30019469388450193, 0.2952677440674355, 0.289308166791064, 0.2834155909561863, 0.2844393469082812, 0.2485916339016209, 0.3261827515282979, 0.37823133457762503, 0.3143962163012475, 0.3709170570752274, 0.2827574904076755, 0.3707464838710924, 0.3323012405696015, 0.323606516700238, 0.387636641971767, 0.3339931764639914, 0.31745864947636915, 0.34321680765909457, 0.30348429239044594, 0.3414610294469943, 0.331711373757571, 0.38359854773928714, 0.3119943734879295, 0.39697204910529155, 0.35646837887664634, 0.33399080694653094, 0.3944459959554175, 0.3432827459958693, 0.3733838871897509, 0.3491157398093492, 0.36801812867634004, 0.33448246253343916, 0.4017689067404717, 0.3198879451180498, 0.38297666756746673, 0.34106272691860795, 0.39041901581610244, 0.33387806980560225, 0.3197787771156679, 0.37237691693007946, 0.35914947992811597, 0.407789351263394, 0.3382284568312267, 0.38902327441610396, 0.4374944663140923, 0.31969843758270144, 0.36575437639839947, 0.37658405544546747, 0.3435770307357112, 0.5044694676374396, 0.4542636872890095, 0.4007656204048544, 0.5386364602018148, 0.3800773043961575, 0.3779413634135078, 0.3948149162655076, 0.36893937612573297, 0.396183702085788, 0.3946598543940733, 0.43720363111545646, 0.42840290721505886, 0.34827854204922915, 0.3898126801941544, 0.4292390027549118, 0.38646161338935303, 0.4017683498871823, 0.4161079505768915, 0.4046917978363732, 0.42247961803028977, 0.41315591909612215, 0.36067915374102694, 0.3578424520480136, 0.3599791989351312, 0.41153249951700366, 0.4641583332171043, 0.4314503918867558, 0.3848303500562906, 0.39805695290366805, 0.512503117012481, 0.4123968505300581, 0.39572614633167785, 0.516707416701441, 0.3933845743692169, 0.42990937270224094, 0.3496241264510899, 0.4125347943045199, 0.4555667937578013, 0.438621204579249, 0.34181432208667195, 0.4434760861719648, 0.4055371896829456, 0.382838137447834, 0.3826014536898583, 0.43332002645668877, 0.43653361530353624, 0.44678768143057823, 0.4238326173896591, 0.40135323093272746, 0.4712717575021088, 0.4599822751867274, 0.4002961020451039, 0.4082090830585609, 0.41041916593288386, 0.46437038419147325, 0.4837825481469433, 0.47078616032376885, 0.4174860545899719, 0.4686013800868143, 0.574758411385119, 0.36621820662791527, 0.6116946828551592, 0.3956439764394114, 0.42538930010050535, 0.4135896662094941, 0.5201203369845947, 0.5014527980238199, 0.4634277482982725, 0.4213936196950575, 0.4237125641666353, 0.45035965787246823, 0.6183052388951182, 0.42480614936600125, 0.533728511693577, 0.41347555691997206, 0.40021670066441095, 0.4662686249551674, 0.5631051802386842, 0.4165320973843336, 0.4401283639793594, 0.5322293693510195, 0.4327893561373155, 0.444624067361777, 0.42533927309947717, 0.4397811282736559, 0.6396594238467515, 0.44847227089727915, 0.48695229133591056, 0.5325065356058379, 0.5616206879882762, 0.5272097185564537, 0.47771636536344886, 0.4771543654302756, 0.5478886639078457, 0.44718576626231277, 0.48454640371104085, 0.698088482953608, 0.4757401578438779, 0.4782522281942268, 0.4459827865163485, 0.5462698076541226, 0.5299523333087564, 0.5436019228460889, 0.47905732054884237, 0.6313175688652943, 0.8258608411997557, 0.5945431821358701, 0.5643771109171212, 0.4717101842009773, 0.5372683016272882, 0.7704951344057918, 0.6153249029691022, 0.5857047926013668, 0.48404720813656843, 0.5536148380488157, 0.4796677611302585, 0.5667572356760503, 0.5965369834254186, 0.6248430109893282, 0.4425937841491153, 0.5586506522571049, 0.6325737070292234, 0.4583400135549407, 0.606777778826654, 0.5316591961309314, 0.5431123754630485, 0.5857858872041106, 0.6082704500295222, 0.8019428759192426, 0.7545047829238078, 0.588315174759676, 0.6267870844652255, 0.5760074531038603, 0.626781448489055, 0.5311533676770827, 0.7635903097689152, 0.5327101370009284, 0.6525101778097451, 0.5997800462258359, 0.5410018085967749, 0.7242634614619117, 0.6078303367830813, 0.674472855248799, 0.5945934023087224, 0.5916790612973273, 0.6574692600406706, 0.6366138630546629, 0.5236728625216832, 0.5632902476936579, 0.6768818128233154, 0.7280310195249815, 0.7014147892283897, 0.6307616738292079, 0.6476501046369473, 0.5847025425173342, 0.6473361503643296, 0.6596098200728496, 0.7158176153898239, 0.7687995498999953, 0.6395795812519889, 0.694660239542524, 0.6088400984493395, 0.7174510527402163, 0.6371313200021784, 0.6097385234509904, 0.7631932173389941, 0.6227524636002879, 0.6799810322312019, 0.5788195522812507, 0.6678473576903343, 0.5782609493471682, 0.7548095627377431, 0.5172038380211841, 0.5787966622350117, 0.6363980489162109, 0.7048626323230565, 0.5682394065273305, 0.6479639746248722, 0.630955024699991, 0.6162361536795895, 0.7068000754031043, 0.6784134479239583, 0.6957187023945154, 0.6546441706207893, 0.6280359143080811, 0.758810757038494, 0.5466561316667745, 0.658846972665439, 0.65080436039716, 0.7198323262855411, 0.5626393478984635, 0.649499327565233, 0.8684119315197071, 0.6379266697137307, 0.7285828730091453, 0.8625390268862247, 0.8428781141216557, 0.6761025669984518, 0.8124113916419446, 0.707450960452358, 0.7206950103864074, 0.7397576371828715, 0.7356047546491028, 0.7478309747142096, 0.7278711088001728, 1.0128487736607592, 0.6655181148089468]}, "grpo_virl39k": {"steps": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256, 257, 258, 259, 260, 261, 262, 263, 264, 265, 266, 267, 268, 269, 270, 271, 272, 273, 274, 275, 276, 277, 278, 279, 280, 281, 282, 283, 284, 285, 286, 287, 288, 289, 290, 291, 292, 293, 294, 295, 296, 297, 298, 299, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 312, 313, 314, 315, 316, 317, 318, 319, 320, 321, 322, 323, 324, 325, 326, 327, 328, 329, 330, 331, 332, 333, 334, 335, 336, 337, 338, 339, 340, 341, 342, 343, 344, 345, 346, 347, 348, 349, 350, 351, 352, 353, 354, 355, 356, 357, 358, 359, 360, 361, 362, 363, 364, 365, 366, 367, 368, 369, 370, 371, 372, 373, 374, 375, 376, 377, 378, 379, 380, 381, 382, 383, 384, 385, 386, 387, 388, 389, 390, 391, 392, 393, 394, 395, 396, 397, 398, 399, 400, 401, 402, 403, 404, 405, 406, 407, 408, 409, 410, 411, 412, 413, 414, 415, 416, 417, 418, 419, 420, 421, 422, 423, 424, 425, 426, 427, 428, 429, 430, 431, 432, 433, 434, 435, 436, 437, 438, 439, 440, 441, 442, 443, 444, 445, 446, 447, 448, 449, 450, 451, 452, 453, 454, 455, 456, 457, 458, 459, 460, 461, 462, 463, 464], "loss": [-0.037955326930386946, -0.035982697330837254, 0.05285273076151498, 0.033629790181294084, 0.002458144779666327, -0.08897489443188533, -0.09186612348639756, -0.013577897406776174, 0.022199449354957324, 0.027097280442831106, -0.011718236011802219, 0.03675243065254108, 0.023442462735147274, -0.021893854873269447, -0.01755035200949351, -0.03616781488696574, 0.01611923872042098, -0.0725604094513983, 0.02983942683385976, 0.03786789969308302, 0.12837756820954382, 0.015959185489919037, -0.014075971092097461, 0.020301618074881844, -0.006814721898990683, 0.005020155454985797, 0.037757846526801586, 0.024294640301377513, -0.043562887665757444, 0.04351275329827331, 0.06458634405134944, 0.008547010729671456, 0.10579061557655223, 0.024092711450066417, 0.058079978542082245, 0.02613137863954762, 0.03155548489667126, 0.05662417115854623, -0.037733927129011136, 0.07595214291359298, 0.05136821448832052, 0.06638912332709879, 0.006456638642703183, 0.0013325829640962183, 0.04776624604710378, 0.046347826060809894, 0.072352886229055, 0.06984021575044608, 0.012269445869605988, 0.05508814431959763, 0.0541563341357687, 0.10131294530583546, -0.0028812816526624374, 0.03906074734959475, -0.0019382298196433112, -0.010085800204251427, 0.006026292656315491, 0.05739719200937543, 0.03451982477781712, 0.045738501623418415, 0.05989636355661787, 0.009678449423518032, 0.013598608173197135, 0.04825629539482179, 0.030239218918723054, 0.04068722756346688, 0.09295648430634174, -0.0008599761786172166, 0.03174445149488747, 0.04731041137711145, 0.021184725395869464, -0.01097718148957938, 0.04368308957782574, 0.0627389929140918, 0.02178615408411133, 0.005407399166870164, 0.029544226708821952, 0.0418222363005043, 0.05015124127157833, 0.014532380766468123, 0.014302276307716966, 0.05359189986484125, -0.02111017907736823, 0.02866886233096011, 0.05374754313379526, 0.03542042232584208, 0.019556241554937515, 0.011433712046709843, 0.06943612860141002, 0.02797534002456814, -0.02416605693724705, 0.04684080226434162, 0.008487961100399843, 0.0226707568144775, -0.011841787192679476, 0.0064945718622766435, 0.009768469724804163, 0.07276729121804237, 0.06377498686197214, 0.009242713043931872, 0.07859644573181868, 0.008261907787527889, 0.01825809373985976, 0.09411932381772203, 0.0404694576136535, -0.0024140760506270453, 0.026368739192548674, 0.06597620670800097, 0.08169094077311456, -0.012209396139951423, 0.03986592930777988, 0.09634158997505438, 0.052764437947189435, 0.0643034748500213, 0.04058402302325703, -0.0071182210158440284, -0.005522486520931125, 0.03590978771535447, 0.058633011096389964, 0.04801740578841418, 0.061943074433656875, 0.019293909484986216, 0.05133175844093785, 0.06858068399742479, 0.041803086816798896, 0.08210321246588137, 0.07351292524981545, 0.017017678852425888, 0.0595367811692995, 0.04201854357961565, 0.04343027272261679, 0.09493816283065826, 0.03971431445097551, 0.011603129823924974, 0.017282837710808963, 0.04196366264659446, 0.036653012270107865, 0.03559663172927685, 0.0831030072295107, 0.01432097303768387, 0.07960813268255151, 0.012651087294216268, 0.01725620057550259, 0.01753117576299701, 0.00738576652656775, 0.06376837004791014, 0.04159799657645635, -0.009464575935226094, 0.0724334679543972, 0.05956425282784039, 0.016862440453223826, 0.035169877286534756, 0.03692311159102246, 0.03356916888151318, 0.060556737196748145, 0.05307976603126008, 0.0737794399028644, 0.006842643255367875, 0.048266718280501664, 0.0037707136798417196, 0.01753436482977122, -0.011566927409148775, 0.02392382425023243, 0.019962345440944773, 0.04359084568568505, -0.0002214685664512217, 0.036379810313519556, 0.016089670898509212, 0.08836893184343353, 0.0511133420659462, -0.001772738432919141, 0.0032013545715017244, 0.02197773614898324, 0.011264225053309929, 0.03881621884647757, 0.049972945867921226, 0.0634438952547498, 0.021544381357671227, 0.004918332080706023, 0.009623365447623655, 0.034061881526213256, 0.03516299865441397, 0.0017183306517836172, 0.05996493928250857, 0.0361430559278233, 0.026647195889381692, 0.05302094653598033, 0.015187723038252443, 0.024134031191351824, 0.028517139799077995, -0.0030178353626979515, 0.01854186085984111, 0.03983637259261741, 0.038333426378812874, 0.0589864047269657, 0.040443865771521814, 0.05119497796658834, 0.017518955457489938, 0.007105874723492889, 0.022577247524168342, 0.00412225560285151, 0.04472541401628405, 0.03538198134629056, 0.07595897902501747, 0.031357140629552305, 0.013816379941999912, 0.046311058118590154, 0.026073217508383095, 0.005569704566369182, 0.009222643479006365, 0.009305903920903802, 0.06619813718600653, 0.03741859138244763, 0.02945382328471169, 0.09273762024713506, 0.06077942611409526, 0.09460334666073322, 0.015726555982837453, -0.006634171077166684, 0.04600414470769465, 0.021797864785185084, 0.00859319034498185, 0.07312272799754282, 0.09336159063968807, 0.020998056745156646, 0.020609160972526297, -0.007855264702811837, 0.057062884166953154, 0.03412343417585362, 0.06019625859335065, 0.017879007064038888, 0.030061256140470505, 0.04042985552223399, 0.008905394410248846, -0.016381791967432946, 0.05368666199501604, 0.006471755470556673, 0.02210274600656703, 0.05099623027490452, 0.07065208166022785, 0.024675454638781957, 0.02331654772569891, 0.01742431294405833, 0.02680455771042034, 0.011861202699947171, 0.0035903734542444, 0.03856705967336893, 0.04035847766499501, 0.04785113176330924, 0.013392472377745435, 0.02484563812322449, 0.04926782881375402, 0.01137027982622385, 0.0326689844368957, 0.05372172559145838, 0.020374045008793473, 0.025481056349235587, 0.05196010413055774, 0.047848321381025016, 0.020029065432026982, 0.004595509963110089, 0.019737925875233486, 0.029547122307121754, 0.03726197872310877, 0.06064862291532336, 0.0021297495113685727, 0.05628539873941918, 0.022787223773775622, 0.003578216186724603, 0.04784958696245667, 0.016737819678382948, 0.036373458551679505, 0.0422762370435521, 0.07815539959847229, 0.06307974850642495, 0.07118002101196907, 0.006752553395926952, 0.036947530577890575, 0.04362275859239162, 0.05389218538766727, 0.05864052120887209, 0.011071063985582441, 0.054912367748329416, 0.012994251679629087, 0.04937394935404882, 0.02452900674461489, 0.012973077653441578, -0.012265179691894446, 0.05479059080244042, -0.014488005224848166, 0.015069607485202141, 0.01723246939945966, 0.03698607316619018, 0.057227388489991426, 0.041334378303872654, 0.04020436276914552, 0.030392000451683998, 0.04468603064015042, 0.012696284335106611, 0.015046158612676663, -0.024275279516587034, 0.024259740879642777, 0.06694336554937763, 0.041905323159880936, -0.002506861972506158, 0.016508629159943666, -0.004865143186179921, 0.03906661336077377, 0.02797695150366053, 0.058872154011623934, 0.0469360075876466, -0.004609142051776871, 0.09262433777621482, 0.06436634152851184, -0.00798541511176154, 0.04288815619656816, 0.03711153972835746, 0.01824295214464655, 0.036877921425912064, 0.015191816579317674, 0.026635578833520412, 0.047568716952810064, 0.06169907038565725, 0.05392490049416665, 0.05791343908640556, 0.0106265756621724, 0.007348591898335144, 0.02302290163061116, 0.00860840750101488, 0.006732824956998229, -0.006623297274927609, -0.0005059776972302643, 0.008858065375534352, 0.022794788383180276, 0.01741379035229329, 0.09231527025985997, 0.09845368104288355, 0.04196523831342347, 0.044098276426666416, 0.03310964602860622, 0.05009102758776862, 0.03180919957230799, 0.009513981378404424, 0.019937851873692125, 0.05934570578392595, 0.0042912962671834975, 0.018787154753226787, 0.028394861714332364, 0.0337678574869642, 0.03566804307047278, 0.11793204450805206, -0.005069417355116457, 0.07146219882997684, 0.0803979437041562, 0.0061406086751958355, -0.008329276119184215, 0.026613295111019397, 0.031280278926715255, 0.010879378962272312, 0.0571356134605594, 0.03788169444305822, 0.04030246598995291, 0.00797301932470873, 0.04472909402102232, 0.04988005797349615, 0.028915587870869786, 0.05448072298895568, 0.03205342264845967, 0.0351645311457105, 0.04046770056447713, 0.0381706006010063, -0.0037914608255960047, 0.01720397734152357, 0.033748912916053087, 0.014750986912986264, 0.023975215619429946, -0.012313504645135254, 0.05642535712104291, 0.026213405217276886, 0.03982219265890308, 0.038655020762234926, 0.04180970584275201, 0.03439470584271476, 0.04302008225931786, 0.007695175852859393, 0.004376144788693637, 0.05451729601190891, 0.04414576639828738, -0.0073738377723202575, 0.023421536884598027, 0.01816340697405394, 0.016521792858839035, 0.03741490399261238, 0.06403684731048997, 0.038559651060495526, 0.020440977590624243, 0.028878493743832223, 0.013307326065842062, 0.07445798869594, 0.02290620688290801, 0.0029723256741363002, 0.03768147135269828, 0.041714594583027065, 0.0001765015913406387, 0.04166840296238661, 0.04878460762120085, 0.014055986423045397, -0.015273438533768058, 0.06260366128844908, 0.029350627009989694, 0.051271258780616336, 0.003042333759367466, 0.02214899510727264, 0.06191006553126499, 0.022441066499595763, 0.004862234185566194, 0.022806778084486723, 0.04775875785344397, 0.021906936075538397, 0.07329115919128526, 0.03893860406242311, 0.0654040030494798, 0.059225723904091865, 0.024500241910573095, 0.027499834715854377, 0.012541693737148307, -0.0030594151030527428, 0.07337584174820222, -0.0038542826387129026, 0.01098515879129991, -0.010313612729078159, 0.016717608661565464, 0.0034164103999501094, 0.06624004378682002, -0.007738376269116998, 0.03865516694349935, 0.03737817209184868, 0.05041522963438183, 0.0449943297644495, 0.010368897565058433, 0.02953970326416311, 0.016812905902042985, 0.047115417779423296, 0.01192564656957984, 0.014901382615789771, 0.013062433004961349, 0.05594099590962287, 0.05408996850019321, 0.028201336797792464, 0.05312610333203338, 0.0013065188250038773, 0.041415564075578004, 0.017919531506777275, 0.01685166181414388, 0.03007615157184773, 0.01982113790290896, 0.056050112238153815, 0.02200631453524693, 0.0022092436483944766, 0.053723549524875125, 0.015794347040355206, 0.0029217325936770067, 0.04265587427653372, 0.07597453266498633]}, "visionopd_repo": {"steps": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65], "loss": [0.031561859500167586, 0.031231581793690566, 0.02811094819844584, 0.03183659701850653, 0.030381451965998472, 0.02817156841107741, 0.028109873501913782, 0.02601320970158364, 0.026178309309519438, 0.02241928602234111, 0.020355189006901735, 0.020578725570279253, 0.017005600301369363, 0.017870548974315167, 0.0157496221842545, 0.015754466000847366, 0.012998600109616138, 0.014628404102647133, 0.01300183672052905, 0.014083757361125514, 0.013940536844529557, 0.011866359490644147, 0.011621476847115748, 0.011755554209230468, 0.011480644537490054, 0.01074296266233432, 0.012206276175371993, 0.011279511222407262, 0.010877119841097736, 0.010329900502559516, 0.01119442253639136, 0.010028493801655713, 0.009711527123423973, 0.00889275202492475, 0.009033667276829268, 0.007990876488292997, 0.008895395575261015, 0.008372092008964197, 0.008805398632830473, 0.007994352939931558, 0.007494850120262223, 0.008336872570907872, 0.007057038272553957, 0.007301474674932251, 0.007297003319763462, 0.006920521187870084, 0.006377594634007741, 0.007328531412895244, 0.007336260868214594, 0.006463653137264677, 0.007279879265600661, 0.007159863136469842, 0.006551210602992796, 0.00594689632725931, 0.007112290934855992, 0.006669155381132441, 0.006240036987946949, 0.005625309177048621, 0.006981222283078144, 0.0055342655441563676, 0.006118371614926824, 0.006058770133677173, 0.005819107277905762, 0.00676445795716063, 0.006417530060844001]}, "cons_repo": {"steps": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62], "loss": [0.9421891102643861, 0.9669077462843947, 0.9007612351949016, 0.9670803760354583, 0.964115900794665, 0.9207074656470181, 0.8917725015733693, 0.8767134445170834, 0.7920198501789407, 0.777776352255731, 0.6561708634512292, 0.6193773162022636, 0.6062502957175713, 0.6267273143135211, 0.6708277433707908, 0.8108648398559387, 0.842650586185423, 0.8062437307344724, 0.7249494801237159, 0.6501572279108537, 0.5978696614197672, 0.5108499582856894, 0.5359370760821007, 0.5410276617233951, 0.5267108737214191, 0.5368822020006506, 0.5580032284129156, 0.5266303721110563, 0.5346722540585962, 0.6685265535361147, 0.6621381110728604, 0.6632187793652217, 0.5883778360200255, 0.569908279262177, 0.5186946615080039, 0.48394419585128085, 0.49035464074105434, 0.46528835288465836, 0.4647152583076529, 0.4827209282921602, 0.4821409728020838, 0.4860791735149719, 0.4846501461154706, 0.49876273438955354, 0.47802810441400556, 0.4924501428833684, 0.4775323831551784, 0.4925283103773038, 0.4811659442965646, 0.5057906192299483, 0.49154069892143554, 0.5060496381292605, 0.5155610849391925, 0.4821935883940083, 0.49103785367452935, 0.4938026276251224, 0.4923719949516895, 0.517991594142384, 0.507648049023103, 0.5174708365373416, 0.5325670072885409]}, "std_repo": {"steps": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62], "loss": [1.5270490815786466, 1.5553767534123886, 1.5069324167238343, 1.559736501123454, 1.5433765188665003, 1.5318802980935737, 1.4737417279063045, 1.4521334653031335, 1.3792403099471575, 1.3731287669491123, 1.2501440145809886, 1.073918446495726, 0.9928485395739207, 1.0538141427410617, 1.0670804163894139, 1.184417250834099, 1.183157257836413, 1.181984710162633, 1.1610689998081287, 1.0921228244095236, 1.2558362549298432, 1.1862939727064725, 1.115330921032944, 1.0976682309418508, 1.0605715803197913, 0.9423908352443617, 0.8900681510567665, 0.8336703591048717, 0.8363714077293056, 0.8920879248682767, 0.8821446702700771, 0.8656999645371959, 0.9036715959509214, 0.9026145119577238, 0.9187395742370023, 0.9042462545633315, 0.8939431663099172, 0.931212952181901, 0.9231898097755158, 0.8712426733276616, 0.9154022091055569, 0.9395852101175752, 0.9032445020369582, 0.8969329968094826, 0.9196568005200889, 0.906106745572509, 0.9366922336816788, 0.909367479283262, 0.9130255382608723, 0.922362924326916, 0.920276962419351, 0.9182116953681594, 0.9657565602292754, 0.9717370432776374, 0.9463601366088197, 0.9310221718372526, 0.9818780870252364, 0.95703919785651, 0.9631875642154315, 0.9573830675085385, 0.9611203021382632, 0.9824895753046952]}, "short90_std_virl39k": {"steps": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90], "loss": [0.32078, 0.26814, 0.29204, 0.29692, 0.32347, 0.27607, 0.26468, 0.29805, 0.25183, 0.29666, 0.20449, 0.21389, 0.21537, 0.19098, 0.20118, 0.20696, 0.18497, 0.16669, 0.18703, 0.20483, 0.19847, 0.18797, 0.19111, 0.1614, 0.16528, 0.17716, 0.14747, 0.19034, 0.17383, 0.18601, 0.16632, 0.22401, 0.1842, 0.20431, 0.20032, 0.21874, 0.19122, 0.18359, 0.2079, 0.19578, 0.20986, 0.22015, 0.21594, 0.20792, 0.21067, 0.20833, 0.20917, 0.19508, 0.24153, 0.2077, 0.21728, 0.18446, 0.2488, 0.21986, 0.22804, 0.23545, 0.22088, 0.2622, 0.27673, 0.23737, 0.2549, 0.25592, 0.24756, 0.23873, 0.26928, 0.25733, 0.21373, 0.25459, 0.26066, 0.32538, 0.26152, 0.28263, 0.28234, 0.2616, 0.26557, 0.32322, 0.26734, 0.27859, 0.2964, 0.30411, 0.29125, 0.32576, 0.34453, 0.31096, 0.35322, 0.32457, 0.29797, 0.3291, 0.3099, 0.3584]}, "short90_cons_virl39k": {"steps": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90], "loss": [0.2154, 0.17461, 0.19573, 0.20488, 0.21256, 0.1808, 0.16599, 0.19826, 0.16693, 0.19366, 0.13543, 0.14118, 0.13318, 0.11953, 0.11525, 0.13088, 0.12178, 0.11429, 0.12605, 0.1266, 0.12139, 0.11496, 0.11744, 0.10503, 0.09947, 0.10456, 0.09254, 0.11428, 0.11184, 0.11529, 0.10182, 0.12343, 0.10652, 0.11472, 0.12767, 0.12793, 0.10255, 0.10049, 0.12289, 0.10122, 0.1199, 0.12099, 0.12129, 0.10458, 0.11151, 0.10708, 0.12798, 0.10449, 0.13651, 0.10897, 0.11851, 0.10004, 0.13148, 0.1247, 0.11672, 0.1185, 0.11127, 0.13491, 0.18282, 0.11675, 0.13946, 0.13664, 0.13885, 0.13467, 0.13408, 0.14742, 0.11004, 0.13388, 0.12394, 0.19238, 0.14241, 0.14481, 0.1356, 0.12897, 0.12796, 0.20286, 0.13841, 0.15946, 0.17341, 0.15554, 0.13957, 0.16769, 0.16405, 0.17779, 0.18826, 0.17447, 0.13501, 0.16839, 0.16019, 0.19675]}, "short90_std_sr1": {"steps": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90], "loss": [0.38733, 0.40547, 0.36442, 0.32557, 0.38305, 0.33069, 0.33653, 0.42741, 0.35134, 0.41523, 0.38181, 0.31555, 0.31939, 0.29053, 0.23715, 0.27303, 0.27582, 0.23801, 0.25871, 0.26287, 0.26253, 0.18152, 0.23985, 0.2241, 0.24239, 0.21215, 0.24883, 0.22322, 0.22798, 0.23337, 0.28634, 0.25568, 0.23819, 0.26951, 0.22599, 0.24951, 0.26361, 0.2443, 0.23309, 0.25322, 0.22649, 0.20834, 0.25384, 0.24655, 0.25604, 0.2614, 0.26375, 0.28021, 0.26177, 0.23558, 0.32553, 0.25727, 0.25452, 0.28174, 0.29344, 0.25157, 0.30973, 0.31951, 0.28603, 0.31049, 0.26194, 0.35101, 0.3256, 0.33921, 0.26098, 0.33396, 0.25927, 0.30542, 0.28288, 0.28585, 0.34708, 0.32072, 0.31028, 0.33909, 0.32497, 0.30931, 0.32248, 0.32803, 0.36342, 0.34472, 0.34835, 0.34221, 0.36634, 0.33439, 0.38208, 0.3706, 0.33226, 0.38153, 0.38478, 0.32711]}, "short90_cons_sr1": {"steps": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90], "loss": [0.25461, 0.26715, 0.245, 0.23031, 0.25849, 0.2294, 0.24146, 0.26648, 0.21865, 0.24455, 0.22724, 0.19264, 0.17336, 0.1748, 0.15291, 0.14937, 0.15591, 0.14615, 0.16884, 0.13828, 0.16912, 0.12222, 0.15892, 0.1451, 0.14982, 0.12544, 0.15363, 0.13799, 0.12338, 0.147, 0.18582, 0.13684, 0.12784, 0.14393, 0.12509, 0.14577, 0.14765, 0.12582, 0.14204, 0.14645, 0.12691, 0.133, 0.14199, 0.13564, 0.15614, 0.15294, 0.14691, 0.15719, 0.14989, 0.14006, 0.17907, 0.14904, 0.14077, 0.16376, 0.15231, 0.14759, 0.15323, 0.16538, 0.1613, 0.18657, 0.15046, 0.18045, 0.21301, 0.18435, 0.14189, 0.19753, 0.1521, 0.15183, 0.16155, 0.1564, 0.1703, 0.1777, 0.18809, 0.21372, 0.20867, 0.17697, 0.16069, 0.15652, 0.2171, 0.20231, 0.18437, 0.19029, 0.20406, 0.22041, 0.20163, 0.20895, 0.16783, 0.21563, 0.23558, 0.17848]}};
+
+function ema(values, alpha) {
+  const out = [];
+  let prev = values[0];
+  for (const v of values) {
+    prev = alpha * v + (1 - alpha) * prev;
+    out.push(prev);
+  }
+  return out;
+}
+
+function resolveVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+const ns = "http://www.w3.org/2000/svg";
+function el(tag, attrs) {
+  const e = document.createElementNS(ns, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  return e;
+}
+
+// seriesDefs: [{key, label, colorVar, axis:'left'|'right', smooth:bool, dash:bool}]
+// hidden: Set of series keys currently toggled off (persists across redraws of the same chart)
+function renderChart(svgId, legendId, tooltipId, seriesDefs, opts, hidden) {
+  const svg = document.getElementById(svgId);
+  const legend = document.getElementById(legendId);
+  const tooltip = document.getElementById(tooltipId);
+  svg.innerHTML = "";
+  legend.innerHTML = "";
+
+  const visibleDefs = seriesDefs.filter(def => !hidden.has(def.key));
+  const W = svg.viewBox.baseVal.width, H = svg.viewBox.baseVal.height;
+  const hasRight = visibleDefs.some(s => s.axis === "right");
+  const padL = 54, padR = hasRight ? 54 : 20, padT = 20, padB = 40;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+
+  // legend renders ALL series (including hidden ones, dimmed) so they can be toggled back on
+  seriesDefs.forEach(def => {
+    const isHidden = hidden.has(def.key);
+    const color = resolveVar(def.colorVar);
+    const li = document.createElement("div");
+    li.className = "legend-item";
+    li.style.cssText = `display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;color:${isHidden ? "var(--ink-faint)" : "var(--ink-soft)"};opacity:${isHidden ? 0.55 : 1};`;
+    li.title = isHidden ? "点击显示" : "点击隐藏";
+    const swatch = document.createElement("span");
+    swatch.style.cssText = `display:inline-block;width:13px;height:${def.dash ? '0' : '3px'};border-radius:2px;background:${def.dash ? 'none' : color};${def.dash ? `border-top:2px dashed ${color};` : ''}`;
+    li.appendChild(swatch);
+    const txt = document.createElement("span");
+    txt.style.textDecoration = isHidden ? "line-through" : "none";
+    const d = LOSS_DATA[def.key];
+    const smoothVals = def.smooth ? ema(d.loss, opts.emaAlpha || 0.1) : d.loss;
+    txt.textContent = `${def.label} — ${smoothVals[0].toFixed(3)} → ${smoothVals[smoothVals.length - 1].toFixed(3)}`;
+    li.appendChild(txt);
+    li.addEventListener("click", () => {
+      if (hidden.has(def.key)) hidden.delete(def.key); else hidden.add(def.key);
+      renderChart(svgId, legendId, tooltipId, seriesDefs, opts, hidden);
+    });
+    legend.appendChild(li);
+  });
+
+  if (visibleDefs.length === 0) {
+    const msg = document.createElement("div");
+    msg.style.cssText = "padding:24px; text-align:center; color:var(--ink-faint); font-size:13px;";
+    msg.textContent = "所有曲线都被隐藏了 — 点击上面的图例重新显示";
+    svg.style.display = "none";
+    if (!legend.nextElementSibling || !legend.nextElementSibling.classList || !legend.nextElementSibling.classList.contains("empty-chart-msg")) {
+      msg.classList.add("empty-chart-msg");
+      legend.insertAdjacentElement("afterend", msg);
+    }
+    return;
+  } else {
+    svg.style.display = "";
+    const existingMsg = legend.parentElement.querySelector(".empty-chart-msg");
+    if (existingMsg) existingMsg.remove();
+  }
+
+  const series = visibleDefs.map(def => {
+    const d = LOSS_DATA[def.key];
+    const smooth = def.smooth ? ema(d.loss, opts.emaAlpha || 0.1) : d.loss;
+    return { ...def, steps: d.steps, raw: d.loss, smooth };
+  });
+
+  const xMax = opts.xMax || Math.max(...seriesDefs.map(def => Math.max(...LOSS_DATA[def.key].steps)));
+  const xScale = x => padL + x / xMax * plotW;
+
+  const leftSeries = series.filter(s => s.axis !== "right");
+  const rightSeries = series.filter(s => s.axis === "right");
+
+  let lMin = Math.min(...leftSeries.flatMap(s => s.smooth));
+  let lMax = Math.max(...leftSeries.flatMap(s => s.smooth));
+  let lPad = (lMax - lMin) * 0.08;
+  lMin -= lPad; lMax += lPad;
+  const yScaleLeft = v => padT + (1 - (v - lMin) / (lMax - lMin)) * plotH;
+
+  let rMin = 0, rMax = 1, yScaleRight = v => padT;
+  if (rightSeries.length) {
+    rMin = Math.min(...rightSeries.flatMap(s => s.smooth));
+    rMax = Math.max(...rightSeries.flatMap(s => s.smooth));
+    const rPad = (rMax - rMin) * 0.15;
+    rMin -= rPad; rMax += rPad;
+    yScaleRight = v => padT + (1 - (v - rMin) / (rMax - rMin)) * plotH;
+  }
+
+  // gridlines + left labels
+  const ticks = 5;
+  for (let i = 0; i <= ticks; i++) {
+    const val = lMin + (lMax - lMin) * i / ticks;
+    const y = yScaleLeft(val);
+    svg.appendChild(el("line", { class: "grid-line", x1: padL, x2: W - padR, y1: y.toFixed(1), y2: y.toFixed(1) }));
+    const t = el("text", { class: "axis-label", x: padL - 8, y: (y + 3.5).toFixed(1), "text-anchor": "end" });
+    t.textContent = val.toFixed(2);
+    svg.appendChild(t);
+  }
+  if (rightSeries.length) {
+    for (let i = 0; i <= ticks; i += 2) {
+      const val = rMin + (rMax - rMin) * i / ticks;
+      const y = yScaleRight(val);
+      const t = el("text", { class: "axis-label-right", x: (W - padR + 8).toFixed(1), y: (y + 3.5).toFixed(1) });
+      t.textContent = val.toFixed(3);
+      svg.appendChild(t);
+    }
+    const rt = el("text", { class: "axis-title", x: W - padR - 4, y: 12, "text-anchor": "end" });
+    rt.style.fill = resolveVar("--grpo-line");
+    rt.textContent = "GRPO pg_loss →";
+    svg.appendChild(rt);
+  }
+  const lt = el("text", { class: "axis-title", x: padL, y: 12 });
+  lt.textContent = opts.leftAxisLabel || "self-distillation loss";
+  svg.appendChild(lt);
+
+  // x ticks
+  const xTickCount = opts.xTickCount || 6;
+  for (let i = 0; i <= xTickCount; i++) {
+    const val = Math.round(xMax * i / xTickCount);
+    const x = xScale(val);
+    const t = el("text", { class: "axis-label", x: x.toFixed(1), y: H - padB + 16, "text-anchor": "middle" });
+    t.textContent = "step " + val;
+    svg.appendChild(t);
+  }
+
+  function pathFor(steps, vals, yScale) {
+    return steps.map((s, i) => (i === 0 ? "M" : "L") + xScale(s).toFixed(2) + "," + yScale(vals[i]).toFixed(2)).join(" ");
+  }
+
+  const hoverLine = el("line", { class: "hover-crosshair", x1: padL, x2: padL, y1: padT, y2: H - padB });
+  svg.appendChild(hoverLine);
+
+  const hoverDots = [];
+  series.forEach(s => {
+    const yScale = s.axis === "right" ? yScaleRight : yScaleLeft;
+    const color = resolveVar(s.colorVar);
+    if (s.smooth !== s.raw && s.smoothFlag) {
+      svg.appendChild(el("path", { class: "raw-ghost", d: pathFor(s.steps, s.raw, yScale), stroke: color }));
+    }
+    const cls = s.dash ? "curve-grpo-ext" : "";
+    const pathEl = el("path", { d: pathFor(s.steps, s.smooth, yScale), fill: "none", stroke: color, "stroke-width": s.dash ? 1.8 : 2.1 });
+    if (s.dash) pathEl.setAttribute("stroke-dasharray", "4 3");
+    svg.appendChild(pathEl);
+    const dot = el("circle", { class: "hover-dot", r: 3.6, fill: color });
+    svg.appendChild(dot);
+    hoverDots.push({ s, dot, yScale });
+  });
+
+  const overlay = el("rect", { class: "chart-overlay", x: padL, y: padT, width: plotW, height: plotH });
+  svg.appendChild(overlay);
+
+  overlay.addEventListener("mousemove", e => {
+    const rect = svg.getBoundingClientRect();
+    const scaleX = W / rect.width;
+    const mx = (e.clientX - rect.left) * scaleX;
+    const step = Math.round((mx - padL) / plotW * xMax);
+    if (step < 0 || step > xMax) return;
+    const x = xScale(step);
+    hoverLine.setAttribute("x1", x.toFixed(2));
+    hoverLine.setAttribute("x2", x.toFixed(2));
+    hoverLine.style.opacity = 1;
+
+    const lines = [`<b>step ${step}</b>`];
+    hoverDots.forEach(({ s, dot, yScale }) => {
+      let idx = 0, best = Infinity;
+      for (let i = 0; i < s.steps.length; i++) {
+        const diff = Math.abs(s.steps[i] - step);
+        if (diff < best) { best = diff; idx = i; }
+      }
+      if (best > xMax * 0.05 && s.steps.length < 20) return;
+      const sx = xScale(s.steps[idx]), sy = yScale(s.smooth[idx]);
+      dot.setAttribute("cx", sx.toFixed(2));
+      dot.setAttribute("cy", sy.toFixed(2));
+      dot.style.opacity = 1;
+      lines.push(`${s.label}: ${s.smooth[idx].toFixed(3)}`);
+    });
+
+    tooltip.style.opacity = 1;
+    const wrapRect = svg.parentElement.getBoundingClientRect();
+    tooltip.style.left = ((e.clientX - wrapRect.left)).toFixed(0) + "px";
+    tooltip.style.top = ((e.clientY - wrapRect.top)).toFixed(0) + "px";
+    tooltip.innerHTML = lines.join("<br>");
+  });
+  overlay.addEventListener("mouseleave", () => {
+    hoverLine.style.opacity = 0;
+    hoverDots.forEach(({ dot }) => dot.style.opacity = 0);
+    tooltip.style.opacity = 0;
+  });
+}
+
+const REPO_SERIES = [
+  { key: "std_repo", label: "contrast-标准（本仓库）", colorVar: "--accent", axis: "left" },
+  { key: "cons_repo", label: "contrast-保守（本仓库）", colorVar: "--teal", axis: "left" },
+  { key: "visionopd_repo", label: "VisionOPD（本仓库）", colorVar: "--visionopd", axis: "left", dash: false },
+];
+const REPO_OPTS = { leftAxisLabel: "self-distillation loss", xTickCount: 5 };
+const REPO_HIDDEN = new Set();
+
+const ABLATION_SERIES = [
+  { key: "contrast_std_virl39k", label: "contrast-标准 · virl39k", colorVar: "--virl-std", axis: "left", smooth: true },
+  { key: "contrast_cons_virl39k", label: "contrast-保守 · virl39k", colorVar: "--virl-cons", axis: "left", smooth: true },
+  { key: "contrast_std_sr1", label: "contrast-标准 · sr1", colorVar: "--sr1-std", axis: "left", smooth: true },
+  { key: "contrast_cons_sr1", label: "contrast-保守 · sr1", colorVar: "--sr1-cons", axis: "left", smooth: true },
+  { key: "grpo_virl39k", label: "GRPO · virl39k（右轴）", colorVar: "--grpo-line", axis: "right", smooth: true, dash: true },
+];
+const ABLATION_OPTS = { leftAxisLabel: "self-distillation loss（左轴）", xTickCount: 6, emaAlpha: 0.08 };
+const ABLATION_HIDDEN = new Set();
+
+const SHORT90_SERIES = [
+  { key: "short90_std_virl39k", label: "contrast-标准 · virl39k（90步）", colorVar: "--virl-std", axis: "left" },
+  { key: "short90_cons_virl39k", label: "contrast-保守 · virl39k（90步）", colorVar: "--virl-cons", axis: "left" },
+  { key: "short90_std_sr1", label: "contrast-标准 · sr1（90步·4096）", colorVar: "--sr1-std", axis: "left" },
+  { key: "short90_cons_sr1", label: "contrast-保守 · sr1（90步·4096）", colorVar: "--sr1-cons", axis: "left" },
+];
+const SHORT90_OPTS = { leftAxisLabel: "self-distillation loss", xTickCount: 5 };
+const SHORT90_HIDDEN = new Set();
+
+renderChart("svg-repo", "legend-repo", "tooltip-repo", REPO_SERIES, REPO_OPTS, REPO_HIDDEN);
+renderChart("svg-ablation", "legend-ablation", "tooltip-ablation", ABLATION_SERIES, ABLATION_OPTS, ABLATION_HIDDEN);
+renderChart("svg-short90", "legend-short90", "tooltip-short90", SHORT90_SERIES, SHORT90_OPTS, SHORT90_HIDDEN);
+
+// —— 2B 主表按训练数据过滤（baseline 永远保留）——
+(function () {
+  const toolbar = document.getElementById("data-filter-2b");
+  if (!toolbar) return;
+  const boxes = toolbar.querySelectorAll("input[data-filter]");
+  function apply() {
+    const on = {};
+    boxes.forEach(b => { on[b.dataset.filter] = b.checked; });
+    document.querySelectorAll("tr[data-group]").forEach(tr => {
+      const g = tr.dataset.group;
+      if (g === "base") { tr.classList.remove("row-hidden"); return; }
+      tr.classList.toggle("row-hidden", !on[g]);
+    });
+  }
+  boxes.forEach(b => b.addEventListener("change", apply));
+})();
+
+window.addEventListener("resize", () => {
+  renderChart("svg-repo", "legend-repo", "tooltip-repo", REPO_SERIES, REPO_OPTS, REPO_HIDDEN);
+  renderChart("svg-ablation", "legend-ablation", "tooltip-ablation", ABLATION_SERIES, ABLATION_OPTS, ABLATION_HIDDEN);
+  renderChart("svg-short90", "legend-short90", "tooltip-short90", SHORT90_SERIES, SHORT90_OPTS, SHORT90_HIDDEN);
+});
+
+// ---- results-table row checkboxes: hide/show individual rows ----
+function setupTableRowToggles() {
+  document.querySelectorAll("table.results").forEach((table, tableIdx) => {
+    const rows = Array.from(table.querySelectorAll("tbody tr"));
+    if (!rows.length) return;
+
+    const toolbar = document.createElement("div");
+    toolbar.className = "table-toolbar";
+    const countEl = document.createElement("span");
+    const btnAll = document.createElement("button");
+    btnAll.textContent = "全部显示";
+    const btnNone = document.createElement("button");
+    btnNone.textContent = "全部隐藏";
+    toolbar.appendChild(countEl);
+    toolbar.appendChild(btnAll);
+    toolbar.appendChild(btnNone);
+
+    const scrollWrap = table.closest(".table-scroll");
+    scrollWrap.parentElement.insertBefore(toolbar, scrollWrap);
+
+    function updateCount() {
+      const hiddenN = rows.filter(r => r.classList.contains("row-hidden")).length;
+      countEl.textContent = hiddenN === 0
+        ? `${rows.length} 行全部显示`
+        : `已隐藏 ${hiddenN}/${rows.length} 行`;
+    }
+
+    rows.forEach((row, rowIdx) => {
+      const firstCell = row.querySelector("td");
+      if (!firstCell) return;
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = true;
+      cb.className = "row-toggle";
+      cb.title = "取消勾选以隐藏这一行";
+      cb.addEventListener("change", () => {
+        row.classList.toggle("row-hidden", !cb.checked);
+        updateCount();
+      });
+      firstCell.insertBefore(cb, firstCell.firstChild);
+    });
+
+    btnAll.addEventListener("click", () => {
+      rows.forEach(row => {
+        row.classList.remove("row-hidden");
+        const cb = row.querySelector(".row-toggle");
+        if (cb) cb.checked = true;
+      });
+      updateCount();
+    });
+    btnNone.addEventListener("click", () => {
+      rows.forEach(row => {
+        row.classList.add("row-hidden");
+        const cb = row.querySelector(".row-toggle");
+        if (cb) cb.checked = false;
+      });
+      updateCount();
+    });
+
+    updateCount();
+  });
+}
+setupTableRowToggles();
+</script>
+
+</body>
+</html>
