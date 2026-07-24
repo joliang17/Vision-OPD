@@ -939,6 +939,7 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
                 processing_class=self.processor if self.processor is not None else self.tokenizer,
                 checkpoint_config=self.config.actor.checkpoint,
             )
+            self.ema_teacher_checkpoint_manager = None
 
         if not self._is_actor and self._is_rollout:
             # If ActorRolloutRefWorker is initialized as a standalone rollout,
@@ -1150,6 +1151,56 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
         )
         dist.barrier()
 
+        self_distillation_cfg = self.config.actor.get("self_distillation", None)
+        save_ema_teacher = bool(
+            self_distillation_cfg is not None
+            and self.config.actor.policy_loss.get("loss_mode", "vanilla") == "vopd"
+            and self_distillation_cfg.get("save_ema_teacher_checkpoint", False)
+            and self_distillation_cfg.get("teacher_model_source", "legacy") == "legacy"
+            and self_distillation_cfg.get("teacher_regularization", "ema") == "ema"
+        )
+        teacher_module = getattr(self.actor, "teacher_module", None)
+        if save_ema_teacher:
+            if teacher_module is None or teacher_module is self.actor_module_fsdp:
+                log_with_rank(
+                    "Skip EMA teacher checkpoint save: no separate teacher module is available.",
+                    rank=dist.get_rank(),
+                    logger=logger,
+                    log_only_rank_0=True,
+                )
+            else:
+                if self._is_offload_param:
+                    load_fsdp_model_to_gpu(teacher_module)
+                actor_save_contents = list(self.config.actor.checkpoint.get("save_contents", ["model"]))
+                ema_save_contents = ["model"]
+                if "hf_model" in actor_save_contents:
+                    ema_save_contents.append("hf_model")
+                ema_checkpoint_config = OmegaConf.create(
+                    {"load_contents": ["model"], "save_contents": ema_save_contents}
+                )
+                if self.ema_teacher_checkpoint_manager is None:
+                    self.ema_teacher_checkpoint_manager = FSDPCheckpointManager(
+                        model=teacher_module,
+                        optimizer=None,
+                        lr_scheduler=None,
+                        processing_class=self.processor if self.processor is not None else self.tokenizer,
+                        checkpoint_config=ema_checkpoint_config,
+                    )
+                else:
+                    self.ema_teacher_checkpoint_manager.model = teacher_module
+                    self.ema_teacher_checkpoint_manager.checkpoint_config = ema_checkpoint_config
+                    self.ema_teacher_checkpoint_manager.checkpoint_save_contents = ema_save_contents
+                    self.ema_teacher_checkpoint_manager.checkpoint_load_contents = ["model"]
+
+                ema_teacher_path = os.path.join(local_path, "ema_teacher", "actor")
+                self.ema_teacher_checkpoint_manager.save_checkpoint(
+                    local_path=ema_teacher_path,
+                    hdfs_path=None,
+                    global_step=global_step,
+                    max_ckpt_to_keep=None,
+                )
+                dist.barrier()
+
         if self._is_lora and hasattr(getattr(self, "actor_module", self.actor_module_fsdp), "peft_config"):
             lora_save_path = os.path.join(local_path, "lora_adapter")
             peft_model = getattr(self, "actor_module", self.actor_module_fsdp)
@@ -1183,6 +1234,8 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
 
         if self._is_offload_param:
             offload_fsdp_model_to_cpu(self.actor_module_fsdp)
+            if save_ema_teacher and teacher_module is not None and teacher_module is not self.actor_module_fsdp:
+                offload_fsdp_model_to_cpu(teacher_module)
 
     @register(dispatch_mode=Dispatch.ONE_TO_ALL)
     def load_checkpoint(self, local_path, hdfs_path=None, del_local_after_load=False):

@@ -6,7 +6,7 @@ set -euo pipefail
 # checkpoint, serve it with vLLM, and evaluate with VLMEvalKit.
 #
 # Common overrides:
-#   TRAIN_PID=857384 bash scripts/eval_vision_opd_vlmevalkit_after_training.sh
+#   TRAIN_PID=857384 bash experiment_script/eval_vision_opd_vlmevalkit_after_training.sh
 #   VLMEVALKIT_DIR=/path/to/VLMEvalKit VLM_DATASETS="MMStar VStarBench" bash ...
 #   CHECKPOINT_ROOT=/path/to/checkpoints/Vision-OPD-Qwen3-VL-4B-Instruct bash ...
 

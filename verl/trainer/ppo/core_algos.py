@@ -1082,6 +1082,137 @@ def agg_loss(
     return loss
 
 
+def compute_opd_token_reward_loss(
+    student_topk_log_probs: torch.Tensor,
+    teacher_topk_log_probs: torch.Tensor,
+    response_mask: torch.Tensor,
+    old_topk_log_probs: Optional[torch.Tensor] = None,
+    reward_weight_mode: str = "student_p",
+    cliprange_low: float = 0.2,
+    cliprange_high: float = 0.3,
+    clip_ratio_c: float = 3.0,
+    reward_clamp: Optional[float] = 10.0,
+    teacher_logp_min_clamp: Optional[float] = -10.0,
+    loss_agg_mode: str = "token-mean",
+    self_distillation_mask: Optional[torch.Tensor] = None,
+    batch_num_tokens: Optional[int] = None,
+    global_batch_size: Optional[int] = None,
+    loss_scale_factor: Optional[int] = None,
+) -> tuple[torch.Tensor, dict[str, Any]]:
+    """VLM port of thunlp/OPD's ``token_reward_direct`` objective (arXiv:2604.13016).
+
+    Unlike ``compute_self_distillation_loss``, the teacher/student divergence is NOT
+    backpropagated as a differentiable distribution-matching loss. It is detached into a
+    per-(token, candidate) REWARD and consumed as a 3-D advantage by the standard PPO
+    clipped policy loss -- so the only gradient path is ``grad log pi``, protected by
+    ratio clipping. That is the whole point: full-strength distribution matching from a
+    much larger teacher drags the student's *answer style* along with its capability,
+    which is what collapsed the 8B->2B contrast run (V* 72.77 -> 60.73 with <1% truncation).
+
+    Uses thunlp's default ``only_stu`` / ``student_p`` setting:
+
+        kl_val  = S_logp - T_on_S                 # (B, L, K) over the STUDENT's own top-K
+        weights = softmax_K(S_logp)               # renormalised student prob inside top-K
+        adv     = -(kl_val * weights)             # detached; token_reward_direct
+
+    ``teacher_topk_log_probs`` must be the teacher's log-probs gathered at the STUDENT's
+    top-K ids (T_on_S), which is what ``_forward_micro_batch(topk_indices=...)`` returns.
+
+    Clamps follow open_verl's distillation config (``loss_max_clamp`` /
+    ``log_prob_min_clamp``), absent from this fork's own OPD path and a known source of
+    late-training blowups.
+
+    Returns:
+        (loss, metrics)
+    """
+    if student_topk_log_probs.dim() != 3 or teacher_topk_log_probs.dim() != 3:
+        raise ValueError(
+            "OPD token-reward loss needs 3-D top-k log-probs (bsz, resp_len, k); got "
+            f"{tuple(student_topk_log_probs.shape)} / {tuple(teacher_topk_log_probs.shape)}. "
+            "Set self_distillation.distillation_topk=<K> and full_logit_distillation=True."
+        )
+
+    metrics: dict[str, Any] = {}
+    loss_mask = response_mask
+    if self_distillation_mask is not None:
+        loss_mask = loss_mask * self_distillation_mask.unsqueeze(1)
+    mask3d = loss_mask.unsqueeze(-1)
+
+    s_lp = student_topk_log_probs
+    t_lp = teacher_topk_log_probs
+    if teacher_logp_min_clamp is not None:
+        t_lp = t_lp.clamp(min=teacher_logp_min_clamp)
+
+    with torch.no_grad():
+        kl_val = (s_lp - t_lp).detach()
+        if reward_clamp is not None:
+            kl_val = kl_val.clamp(min=-reward_clamp, max=reward_clamp)
+
+        if reward_weight_mode == "student_p":
+            w_src = s_lp.detach()
+        elif reward_weight_mode == "teacher_p":
+            w_src = t_lp.detach()
+        elif reward_weight_mode == "none":
+            w_src = torch.zeros_like(s_lp)
+        else:
+            raise ValueError(f"Unknown reward_weight_mode: {reward_weight_mode}")
+        weights = torch.exp(w_src - torch.logsumexp(w_src, dim=-1, keepdim=True))
+        weights = torch.nan_to_num(weights, nan=0.0, posinf=0.0, neginf=0.0)
+
+        advantages = -(kl_val * weights) * mask3d
+
+    # PPO clipped surrogate over the top-k log-probs. On-policy (ppo_epochs=1) the caller
+    # passes old == student.detach(), so ratio == 1 and this reduces to thunlp's
+    # memory-efficient  L = -sum_k A_k * log pi_k  form; the clipping only bites when
+    # ppo_epochs > 1.
+    if old_topk_log_probs is None:
+        old_topk_log_probs = s_lp.detach()
+    negative_approx_kl = torch.clamp(s_lp - old_topk_log_probs, min=-20.0, max=20.0)
+    ratio = torch.exp(negative_approx_kl)
+
+    pg_losses1 = -advantages * ratio
+    pg_losses2 = -advantages * torch.clamp(ratio, 1 - cliprange_low, 1 + cliprange_high)
+    clip_pg_losses1 = torch.maximum(pg_losses1, pg_losses2)
+    pg_losses3 = -advantages * clip_ratio_c
+    clip_pg_losses2 = torch.min(pg_losses3, clip_pg_losses1)
+    pg_losses = torch.where(advantages < 0, clip_pg_losses2, clip_pg_losses1)
+    per_token_loss = pg_losses.sum(dim=-1)  # (B, L) -- sum over the K candidates
+
+    valid = loss_mask.sum().clamp(min=1.0)
+    with torch.no_grad():
+        metrics["opd/token_kl_mean"] = (
+            verl_F.masked_sum((kl_val * weights).sum(-1), loss_mask) / valid
+        ).item()
+        metrics["opd/advantage_mean"] = (
+            verl_F.masked_sum(advantages.sum(-1), loss_mask) / valid
+        ).item()
+        metrics["opd/advantage_abs_mean"] = (
+            verl_F.masked_sum(advantages.abs().sum(-1), loss_mask) / valid
+        ).item()
+        # Fraction of top-k probability mass the student keeps -- thunlp's key diagnostic
+        # for "small shared token set carrying 97-99% of the mass".
+        metrics["opd/student_topk_mass"] = (
+            verl_F.masked_sum(torch.exp(s_lp.detach()).sum(-1), loss_mask) / valid
+        ).item()
+        metrics["opd/teacher_topk_mass"] = (
+            verl_F.masked_sum(torch.exp(t_lp.detach()).sum(-1), loss_mask) / valid
+        ).item()
+        metrics["opd/pg_clipfrac"] = verl_F.masked_mean(
+            (pg_losses2 > pg_losses1).float(), mask3d.expand_as(pg_losses1)
+        ).item()
+        metrics["opd/num_distill_tokens"] = loss_mask.sum().item()
+
+    loss = agg_loss(
+        loss_mat=per_token_loss,
+        loss_mask=loss_mask,
+        loss_agg_mode=loss_agg_mode,
+        batch_num_tokens=batch_num_tokens,
+        global_batch_size=global_batch_size,
+        loss_scale_factor=loss_scale_factor,
+    )
+    return loss, metrics
+
+
 def compute_self_distillation_loss(
     student_log_probs: torch.Tensor,
     teacher_log_probs: torch.Tensor,

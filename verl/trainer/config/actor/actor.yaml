@@ -93,7 +93,23 @@ self_distillation:
   distillation_add_tail: True
 
   # KL interpolation coefficient: 0.0=forward KL, 1.0=reverse KL, in-between=JSD
-  alpha: 0.5 
+  alpha: 0.5
+
+  # thunlp/OPD "token_reward_direct" objective (arXiv:2604.13016), VLM port.
+  # True => the teacher/student top-k divergence is DETACHED into a 3-D advantage and
+  # consumed by the PPO clipped policy loss, instead of being backpropagated as a KL
+  # loss. Requires full_logit_distillation=True + distillation_topk=<K>; mutually
+  # exclusive with ra_vad.
+  opd_token_reward: False
+
+  # Weighting of the per-candidate reward inside the top-k: student_p | teacher_p | none
+  opd_reward_weight_mode: student_p
+
+  # Clamp on the per-token reward (open_verl's loss_max_clamp); null disables
+  opd_reward_clamp: 10.0
+
+  # Floor on teacher log-probs before the divergence (open_verl's log_prob_min_clamp)
+  opd_teacher_logp_min_clamp: -10.0
 
   # Loss weight used for SDPO when combined with policy optimization in OPD mode
   gamma: 1.0
@@ -138,6 +154,9 @@ self_distillation:
 
   # Fixed teacher model path, required when teacher_model_source="fixed"
   teacher_model_path: null
+
+  # Whether to save the EMA teacher checkpoint alongside the actor checkpoint
+  save_ema_teacher_checkpoint: False
 
   # Optional dataset column used as teacher-side images for multimodal distillation
   teacher_image_key: null
@@ -207,6 +226,56 @@ self_distillation:
   # Sample-gate scales: g = sigmoid(margin/margin_scale) * sigmoid(ra_answer/answer_scale).
   ra_margin_scale: 0.5
   ra_answer_scale: 0.1
+  # RA token weighting mode: continuous keeps current RA-VAD; vaopd_grouped uses hard high/low VA groups;
+  # shuffled_control randomly permutes the real per-token weights within each response (same weight
+  # distribution, broken token<->weight correspondence) as a sanity-check ablation.
+  ra_weighting_mode: continuous
+  # Seed for the shuffled_control permutation, independent of the training seed so results stay
+  # reproducible across reruns without being coupled to sampling/data order.
+  ra_shuffle_seed: 12345
+  # Source of the per-token relevance signal: "logprob" (default, logp_hi - logp_ctrl) or
+  # "attention" (attention-to-image-token concentration from a dedicated frozen scorer model;
+  # see docs/compare_vaopd_0701.md Phase 2-核心 第七/八轮).
+  ra_weight_source: logprob
+  # Model path for the frozen attention scorer, only loaded when ra_weight_source=attention.
+  # Defaults to the same checkpoint training starts from.
+  ra_attention_scorer_model_path: ${actor_rollout_ref.model.path}
+  # Qwen3-VL image placeholder token id. Required when ra_weight_source=attention.
+  ra_attention_image_token_id: null
+  # Number of trailing decoder layers averaged into the attention score (all layers are still
+  # computed regardless; this only controls which are used). <=0 = all layers.
+  ra_attention_num_layers: 8
+  # Samples per attention-scorer forward call. Larger = fewer/better-utilized calls but more
+  # peak memory (linear in batch size). Raise from 1 only after confirming headroom.
+  ra_attention_scorer_batch_size: 1
+  # Opt-in: per-step dump of a few samples' (response token id, RA weight) pairs, to track which
+  # tokens get high weight and how that changes over training. null = off. Decode with
+  # scripts/summarize_ra_token_dump.py.
+  ra_token_dump_dir: null
+  ra_token_dump_max_samples: 4
+  # Distillation target: "teacher" (plain EMA hi distribution) or "contrast" (contrast-sharpened
+  # softmax(lp_hi + α(lp_hi − lp_ctrl)) within hi's plausibility set; see build_contrast_target).
+  ra_target_mode: teacher
+  # Contrast tilt strength α.
+  ra_contrast_alpha: 1.0
+  # Anchor coefficient on the plain lp_hi term (1.0=current contrast target; 0.0+α=1.0=pure contrast, no anchor).
+  ra_contrast_anchor_coef: 1.0
+  # Plausibility threshold β: candidate set = {w : p_hi(w) ≥ β max p_hi}.
+  ra_contrast_beta: 0.1
+  # Apply the tilt only at positive-RA-weight positions (elsewhere target = plain hi).
+  ra_contrast_gate_positive_only: False
+  # Vocab ids excluded from the tilt (e.g. im_end/endoftext to avoid boosting early termination).
+  ra_contrast_exclude_token_ids: null
+  # Fraction of response tokens assigned to the high-VA group for vaopd_grouped.
+  ra_vaopd_pv: 0.2
+  # High-VA group loss weight for vaopd_grouped.
+  ra_vaopd_lambda: 0.5
+  # Whether to reweight sibling rollouts from the same prompt by trajectory-averaged VA.
+  ra_rollout_reweight: False
+  # Softmax temperature for rollout-level VA reweighting.
+  ra_rollout_tau: 1.0
+  # RA full-vocab divergence: 0.0=forward KL, 1.0=reverse KL, in-between=generalized JSD.
+  ra_divergence_alpha: 0.0
   # Visual-token budgets for the offline degrade control (R_res).
   ra_ctrl_low_tokens: 256
   ra_ctrl_up_tokens: 1536

@@ -1,0 +1,38 @@
+# 1卡专用资源模板，其余（image/repo/group/cluster）与 mlx_config.yaml（8卡训练模板）保持一致
+# 可以在 merlin 创建任务页面拷贝参数或者参考文档: https://cloud.bytedance.net/bam/rd/lab.rh2.frontend_prod/api_doc/show_doc?cluster=default&x-resource-account=public&api_branch=master&endpoint_id=1731594
+caption: opsd_evalgap_eval_p19_hallu
+jobDefVersion:
+  entrypointMode: FULL_SCRIPT
+  gitRepo: {} # 不走 git clone，改用下面的 bytenasVolumes 直接挂载 NAS，避免分支未 push / repo 权限问题
+  imageMeta:
+    imageSource: vid
+    imageVid: d6lj4vjc77u7t7t31hp0 # 复用参考任务 86b3106b9dfd044c 的 image_vid —— 需你确认这确实是 myverl v11
+  lazyDownloadCode: true
+  name: '[Repo] github.com:VisionOPD/Vision-OPD'
+  resource:
+    arnoldConfig:
+      bytenasVolumes: # 复用参考任务 86b3106b9dfd044c 的挂载方式
+        - accessMode: RW
+          name: tns-algo-video-vlm-ruby
+      clusterId: 17 # cloudnative-useast1b，来自参考任务
+      elasticTraining: {}
+      groupIds:
+        - 668 # 来自参考任务 86b3106b9dfd044c
+      keepMins: 15
+      preemptible: false # 2026-07-14: true 时任务启动约1分钟即被 SIGTERM 抢占（job 8fbe23e8b2c9acb7），改为 false
+      quotaPool: default
+      roles:
+        - cpu: 31 # 按 248/8 单卡比例缩放
+          gpuv: 52 # 来自参考任务的内部卡型编码 —— 未验证是否等价于 B200 的字符串表示
+          gpu: 1
+          memory: 486400 # 按 3891200/8 单卡比例缩放
+          name: worker
+          num: 1
+          ports: 1
+          queueName: compute-543-useast1b-cloudnative-aioci-tns.algo.teen.experiences.minipod.useast1boci46-guarantee # 来自参考任务 86b3106b9dfd044c
+    backend: ARNOLD
+jobRunParams:
+  entrypointFullScript: |
+    cd /mnt/bn/tns-algo-video-vlm-ruby/yijunliang/project/opsd/Vision-OPD && \
+    bash scripts/mlx_batch_20260718/eval_p19_hallu.sh
+namespace: /user/yliang.26

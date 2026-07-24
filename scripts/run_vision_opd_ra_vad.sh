@@ -28,7 +28,13 @@ if [[ -z "${MODEL_PATH:-}" ]]; then
         snap_root="${cache_dir}/models--${MODEL_REPO_DIR}/snapshots"
         [[ -d "$snap_root" ]] || continue
         while IFS= read -r snap_dir; do
-            if [[ -f "${snap_dir}/config.json" && -f "${snap_dir}/tokenizer_config.json" ]]; then
+            has_weights=0
+            if compgen -G "${snap_dir}/model*.safetensors" >/dev/null; then
+                has_weights=1
+            elif [[ -f "${snap_dir}/model.safetensors.index.json" || -f "${snap_dir}/pytorch_model.bin" ]]; then
+                has_weights=1
+            fi
+            if [[ -f "${snap_dir}/config.json" && -f "${snap_dir}/tokenizer_config.json" && "$has_weights" == "1" ]]; then
                 MODEL_PATH="$snap_dir"
                 break
             fi
@@ -44,9 +50,28 @@ if [[ -z "${MODEL_PATH:-}" ]]; then
 fi
 
 EXPERIMENT="${EXPERIMENT:-black}"
-TEACHER_MODEL_SOURCE="legacy"
-TEACHER_REGULARIZATION="ema"
-TEACHER_UPDATE_RATE=0.05
+# Defaults keep the historical self-teacher (EMA) behaviour. Override
+# TEACHER_MODEL_SOURCE=fixed + TEACHER_MODEL_PATH=<dir> for cross-model OPD
+# (e.g. a frozen 8B teacher distilling into a 2B student); the contrast ctrl
+# branch then also runs on that fixed teacher.
+TEACHER_MODEL_SOURCE="${TEACHER_MODEL_SOURCE:-legacy}"
+TEACHER_REGULARIZATION="${TEACHER_REGULARIZATION:-ema}"
+TEACHER_UPDATE_RATE="${TEACHER_UPDATE_RATE:-0.05}"
+TEACHER_MODEL_PATH="${TEACHER_MODEL_PATH:-}"
+FIXED_TEACHER_ARGS=()
+if [[ "$TEACHER_MODEL_SOURCE" == "fixed" ]]; then
+    if [[ -z "$TEACHER_MODEL_PATH" ]]; then
+        echo "ERROR: TEACHER_MODEL_SOURCE=fixed requires TEACHER_MODEL_PATH=<local snapshot dir>." >&2
+        exit 1
+    fi
+    if [[ ! -f "$TEACHER_MODEL_PATH/config.json" ]]; then
+        echo "ERROR: TEACHER_MODEL_PATH has no config.json: $TEACHER_MODEL_PATH" >&2
+        exit 1
+    fi
+    FIXED_TEACHER_ARGS+=(
+        actor_rollout_ref.actor.self_distillation.teacher_model_path="$TEACHER_MODEL_PATH"
+    )
+fi
 
 TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE:-96}"
 PPO_MIMI_BATCH_SIZE="${PPO_MIMI_BATCH_SIZE:-96}"
@@ -74,9 +99,16 @@ PY
 )"
 TRAINER_N_GPUS_PER_NODE="${TRAINER_N_GPUS_PER_NODE:-$DETECTED_GPUS}"
 TRAINER_NNODES="${WORLD_SIZE:-1}"
-TRAINER_SAVE_FREQ="${TRAINER_SAVE_FREQ:--1}"
+TRAINER_SAVE_FREQ="${TRAINER_SAVE_FREQ:-10}"
 TRAINER_TOTAL_EPOCHS="${TRAINER_TOTAL_EPOCHS:-1}"
-TRAINER_MAX_ACTOR_CKPT_TO_KEEP="${TRAINER_MAX_ACTOR_CKPT_TO_KEEP:-null}"
+# Keep 10 (not 2): =2 deletes actor weights from all but the last 2 checkpoints
+# *during* training, which turns every earlier global_step_N into a weightless
+# data.pt shell and silently defeats the post-training prune_checkpoints.sh
+# retention policy. Cost us all early checkpoints of three 437-step runs when
+# we needed them to bisect a mode-collapse onset (2026-07-13). 10 covers most
+# retrospective needs at ~270GB peak for a 2B run; disk is reclaimed by
+# prune_checkpoints.sh right after training per the standing policy.
+TRAINER_MAX_ACTOR_CKPT_TO_KEEP="${TRAINER_MAX_ACTOR_CKPT_TO_KEEP:-10}"
 TRAINER_LOGGER="${TRAINER_LOGGER:-[\"console\",\"tensorboard\"]}"
 ROLLOUT_AGENT_NUM_WORKERS="${ROLLOUT_AGENT_NUM_WORKERS:-8}"
 DATA_DATALOADER_NUM_WORKERS="${DATA_DATALOADER_NUM_WORKERS:-8}"
@@ -187,6 +219,22 @@ case "$EXPERIMENT" in
             actor_rollout_ref.actor.self_distillation.is_clip=2.0
         )
         ;;
+    opd)
+        # Plain cross-model OPD baseline -- VLM port of thunlp/OPD's token_reward_direct
+        # (arXiv:2604.13016), only_stu top-k + student_p weighting. No RA-VAD, no contrast:
+        # this is the reference point the "ours" variants are supposed to beat.
+        EXPERIMENT_ARGS+=(
+            actor_rollout_ref.actor.self_distillation.teacher_image_key=images
+            actor_rollout_ref.actor.self_distillation.teacher_prompt_mode=null
+            actor_rollout_ref.actor.self_distillation.ra_vad=False
+            actor_rollout_ref.actor.self_distillation.opd_token_reward=True
+            actor_rollout_ref.actor.self_distillation.opd_reward_weight_mode="${OPD_REWARD_WEIGHT_MODE:-student_p}"
+            actor_rollout_ref.actor.self_distillation.distillation_topk="${OPD_TOPK:-16}"
+            actor_rollout_ref.actor.self_distillation.full_logit_distillation=True
+            actor_rollout_ref.actor.self_distillation.alpha=1.0
+            actor_rollout_ref.actor.ppo_epochs=1
+        )
+        ;;
     baseline)
         EXPERIMENT_ARGS+=(
             actor_rollout_ref.actor.self_distillation.teacher_image_key=images
@@ -242,12 +290,13 @@ case "$EXPERIMENT" in
         )
         ;;
     *)
-        echo "Unknown EXPERIMENT=$EXPERIMENT. Use visionopd|baseline|degrade|qvis|noimg|black." >&2
+        echo "Unknown EXPERIMENT=$EXPERIMENT. Use visionopd|baseline|opd|degrade|qvis|noimg|black." >&2
         exit 1
         ;;
 esac
 
 export PYTHONPATH="$PROJECT_ROOT:${PYTHONPATH:-}"
+export PYTHONNOUSERSITE="${PYTHONNOUSERSITE:-0}"
 unset VLLM_ATTENTION_BACKEND
 export VLLM_USE_V1=1
 export PYTHONBUFFERED=1
@@ -288,7 +337,17 @@ PY
 else
     export WANDB_MODE="${WANDB_MODE:-disabled}"
     export WANDB_DISABLED="${WANDB_DISABLED:-true}"
-    TRAINER_LOGGER="${TRAINER_LOGGER:-[\"console\",\"tensorboard\"]}"
+    if [[ -n "${TRAINER_LOGGER:-}" ]]; then
+        TRAINER_LOGGER="$TRAINER_LOGGER"
+    elif python3 - <<'PY' >/dev/null 2>&1
+import tensorboard  # noqa: F401
+PY
+    then
+        TRAINER_LOGGER='["console","tensorboard"]'
+    else
+        echo "WARNING: tensorboard is not installed; using console logger only." >&2
+        TRAINER_LOGGER='["console"]'
+    fi
 fi
 
 CHAT_TEMPLATE_ARGS=()
@@ -384,5 +443,6 @@ python3 -m verl.trainer.main_ppo --config-name "$CONFIG_NAME" \
     trainer.rollout_data_dir="$TRAINER_ROLLOUT_DATA_DIR" \
     "${CHAT_TEMPLATE_ARGS[@]}" \
     "${EXPERIMENT_ARGS[@]}" \
+    "${FIXED_TEACHER_ARGS[@]}" \
     "${ANSWER_VAL_ARGS[@]}" \
     "${EXTRA_ARGS[@]}"

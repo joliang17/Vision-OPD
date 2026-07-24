@@ -30,8 +30,14 @@ from torch.distributed.tensor import DTensor
 
 import verl.utils.torch_functional as verl_F
 from verl import DataProto
-from verl.trainer.ppo.core_algos import agg_loss, compute_self_distillation_loss, get_policy_loss_fn, kl_penalty
-from verl.trainer.ppo.ra_vad import compute_ra_weights, ra_kd_loss
+from verl.trainer.ppo.core_algos import (
+    agg_loss,
+    compute_opd_token_reward_loss,
+    compute_self_distillation_loss,
+    get_policy_loss_fn,
+    kl_penalty,
+)
+from verl.trainer.ppo.ra_vad import attention_to_image_score, compute_ra_weights, ra_kd_loss
 from verl.utils.attention_utils import index_first_axis, pad_input, rearrange, unpad_input
 from verl.utils.device import get_device_id, get_device_name
 from verl.utils.fsdp_utils import FSDPModule, fsdp2_clip_grad_norm_
@@ -296,6 +302,183 @@ class DataParallelPPOActor(BasePPOActor):
             },
             save_path,
         )
+
+    def _dump_ra_token_weights(
+        self,
+        *,
+        global_step: Optional[int],
+        self_distillation_cfg,
+        response_ids: torch.Tensor,
+        ra_weights: torch.Tensor,
+        response_mask: torch.Tensor,
+    ) -> None:
+        """Opt-in per-step dump of a few samples' (response token id, RA weight) pairs, for
+        answering "what does the model currently think is a high-weight token, and how does that
+        change over training" without re-running any offline analysis. Off by default
+        (``ra_token_dump_dir=None``); dumps raw token ids + weights, not decoded text, to avoid
+        threading a tokenizer through the actor — decode offline with
+        ``scripts/summarize_ra_token_dump.py`` (uses the same tokenizer as the checkpoint).
+        """
+        dump_root = self_distillation_cfg.get("ra_token_dump_dir", None)
+        if not dump_root or global_step is None:
+            return
+
+        experiment_name = os.environ.get("EXPERIMENT_NAME", os.environ.get("EXPERIMENT", "unknown_experiment"))
+        rank = torch.distributed.get_rank() if (torch.distributed.is_available() and torch.distributed.is_initialized()) else 0
+
+        normalized_root = os.path.normpath(dump_root)
+        if os.path.basename(normalized_root) == experiment_name:
+            save_dir = normalized_root
+        else:
+            save_dir = os.path.join(normalized_root, experiment_name)
+        os.makedirs(save_dir, exist_ok=True)
+        save_path = os.path.join(save_dir, f"{int(global_step)}.rank{rank}.pt")
+
+        max_samples = int(self_distillation_cfg.get("ra_token_dump_max_samples", 4))
+        n = min(max_samples, response_ids.shape[0])
+        torch.save(
+            {
+                "response_ids": response_ids[:n].detach().cpu(),
+                "ra_weights": ra_weights[:n].detach().float().cpu(),
+                "response_mask": response_mask[:n].detach().cpu(),
+                "global_step": int(global_step),
+                "rank": rank,
+                "experiment_name": experiment_name,
+                "ra_weight_source": self_distillation_cfg.get("ra_weight_source", "logprob"),
+            },
+            save_path,
+        )
+
+    def _get_attention_scorer_model(self, model_path: str, device: torch.device) -> nn.Module:
+        """Lazily load and cache a frozen, unsharded (non-FSDP) copy of ``model_path`` used only
+        to extract attention weights for ``ra_weight_source="attention"``.
+
+        This is deliberately a *separate* model instance rather than reusing the live (FSDP-
+        sharded) teacher/actor module: flash-attention kernels never materialize attention weights
+        (``output_attentions=True`` silently returns ``None`` under flash_attention_2/3), and
+        extracting them from the FSDP-wrapped teacher via ad-hoc eager-attention forwards hit
+        multiple FSDP1 ``summon_full_params``/``param_offload`` interaction bugs (wrong o_proj
+        input shape, then an assertion failure on context exit) — see
+        docs/compare_vaopd_0701.md Phase 2-核心 第七/八轮 for the failed attempts. A plain,
+        never-FSDP-wrapped model sidesteps that whole class of bugs, and matches the offline
+        analysis methodology exactly (which also scored with a fixed base checkpoint, not a live
+        teacher). Cost: one extra frozen model resident in GPU memory per rank.
+        """
+        cached = getattr(self, "_attention_scorer_model", None)
+        if cached is not None and getattr(self, "_attention_scorer_model_path", None) == model_path:
+            return cached
+        from transformers import AutoModelForImageTextToText
+
+        model = AutoModelForImageTextToText.from_pretrained(
+            model_path,
+            torch_dtype=self.param_dtype,
+            trust_remote_code=True,
+            attn_implementation="eager",
+        ).to(device)
+        model.eval()
+        for p in model.parameters():
+            p.requires_grad_(False)
+        self._attention_scorer_model = model
+        self._attention_scorer_model_path = model_path
+        return model
+
+    @torch.no_grad()
+    def _compute_attention_ra_raw(
+        self,
+        teacher_inputs: dict[str, torch.Tensor],
+        response_length: int,
+        model_path: str,
+        image_token_id: int,
+        num_layers: int,
+        scorer_batch_size: int = 1,
+    ) -> torch.Tensor:
+        """Per-token attention-to-image-token concentration for ``ra_weight_source="attention"``.
+
+        Runs a plain (padded, non-remove-padding) forward on the frozen scorer model from
+        ``_get_attention_scorer_model``, ``scorer_batch_size`` samples at a time to bound the peak
+        memory of ``output_attentions=True`` (HF always computes+returns attentions for *every*
+        decoder layer regardless of ``num_layers`` — there is no way to request a subset at the
+        C-kernel level — so ``num_layers`` only controls how many of the returned layers get
+        averaged into the score, not how many get computed). Larger ``scorer_batch_size`` trades
+        memory for fewer, better-utilized forward calls; start at 1 and raise only after confirming
+        headroom (the O(seq_len^2) attention matrices dominate memory, not batch size, but they
+        still scale linearly with it).
+        """
+        input_ids = teacher_inputs["input_ids"]
+        attention_mask = teacher_inputs["attention_mask"]
+        position_ids = teacher_inputs["position_ids"]
+        response_start_idx = teacher_inputs["response_start_idx"].to(device=input_ids.device, dtype=torch.long)
+        multi_modal_inputs_batch = teacher_inputs.get("multi_modal_inputs")
+        batch_size, seqlen = input_ids.shape
+
+        response_positions = self._build_response_positions(
+            response_start_idx=response_start_idx,
+            response_length=response_length,
+            seqlen=seqlen,
+        )
+        scorer = self._get_attention_scorer_model(model_path, input_ids.device)
+
+        # teacher_inputs["position_ids"] is batch-first in storage: (bsz, seqlen) for plain rope,
+        # (bsz, 3, seqlen) for Qwen-VL mrope (temporal/height/width). The model's forward(), when
+        # called directly (as we do here, bypassing _forward_micro_batch's remove-padding path),
+        # expects mrope position_ids as (3, bsz, seqlen) — 3 first, NOT batch first (verified
+        # empirically against Qwen3VLModel.get_rope_index's own output shape). Passing (bsz, 3, ...)
+        # un-transposed silently corrupts the multimodal position encoding and cascades into an
+        # unrelated-looking o_proj shape mismatch deep in attention — transpose before slicing.
+        if position_ids.dim() == 3:
+            position_ids = position_ids.transpose(0, 1)  # (bsz, 3, seqlen) -> (3, bsz, seqlen)
+
+        chunk = max(1, int(scorer_batch_size))
+        scores = torch.zeros(batch_size, response_length, dtype=torch.float32, device=input_ids.device)
+        for i in range(0, batch_size, chunk):
+            j = min(i + chunk, batch_size)
+            row_position_ids = position_ids[:, i:j] if position_ids.dim() == 3 else position_ids[i:j]
+            row_inputs = {
+                "input_ids": input_ids[i:j],
+                "attention_mask": attention_mask[i:j],
+                "position_ids": row_position_ids,
+                "use_cache": False,
+                "output_attentions": True,
+            }
+            if multi_modal_inputs_batch is not None:
+                # multi_modal_inputs_batch is the raw per-sample list (same format
+                # _forward_micro_batch receives before its own extract_multi_modal_inputs call) —
+                # reuse that helper on the chunk so multi-image collation (pixel_values concat,
+                # image_grid_thw, image_bound, ...) matches the main forward exactly.
+                from verl.utils.model import extract_multi_modal_inputs
+
+                row_mm = extract_multi_modal_inputs(multi_modal_inputs_batch[i:j])
+                # Unlike the tensors already in teacher_inputs, the raw multi_modal_inputs list
+                # is not guaranteed to have been moved off CPU by an earlier batch-level .to(device)
+                # call (it's a non-tensor container field) — move explicitly or the vision tower's
+                # conv weight (on GPU) mismatches pixel_values (on CPU).
+                row_mm = {k: v.to(input_ids.device) if torch.is_tensor(v) else v for k, v in row_mm.items()}
+                row_inputs.update(row_mm)
+            # verl monkey-patches Qwen*VLForConditionalGeneration.forward process-wide (see
+            # verl/models/transformers/monkey_patch.py, applied once to every actor/teacher/ref
+            # model at worker init — this affects our freshly-loaded scorer too, since it's the
+            # same class) to return a Qwen*VLCausalLMOutputForPPO that only carries logits +
+            # hidden_states, silently dropping attentions even when output_attentions=True is
+            # threaded all the way through internally. One level down, scorer.model(...) (the base
+            # Qwen*VLModel, no LM head) is NOT wrapped that way and still returns attentions
+            # correctly — call that directly instead of the top-level scorer(...), and skip the
+            # (unneeded here) vocab projection as a bonus.
+            row_out = scorer.model(**row_inputs)
+            row_attentions = row_out.attentions
+            if row_attentions is None or len(row_attentions) == 0:
+                raise RuntimeError(
+                    "ra_weight_source='attention' forward returned no attentions — check that the "
+                    "loaded model/transformers version actually supports output_attentions for "
+                    "this architecture."
+                )
+            if num_layers > 0:
+                row_attentions = row_attentions[-num_layers:]
+            row_image_mask = input_ids[i:j] == image_token_id
+            row_positions = response_positions[i:j]
+            row_score = attention_to_image_score(row_attentions, row_image_mask, row_positions)
+            scores[i:j] = row_score
+            del row_attentions, row_out
+        return scores
 
     def _forward_micro_batch(
         self,
@@ -921,7 +1104,12 @@ class DataParallelPPOActor(BasePPOActor):
             non_tensor_select_keys.append("teacher_multi_modal_inputs")
         if has_teacher_ctrl_multi_modal_inputs:
             non_tensor_select_keys.append("teacher_ctrl_multi_modal_inputs")
-        if self.use_prefix_grouper and "uid" in data.non_tensor_batch.keys():
+        ra_rollout_reweight = bool(
+            self_distillation_enabled
+            and ra_vad_enabled
+            and self_distillation_cfg.get("ra_rollout_reweight", False)
+        )
+        if (self.use_prefix_grouper or ra_rollout_reweight) and "uid" in data.non_tensor_batch.keys():
             non_tensor_select_keys.append("uid")
 
         data = data.select(batch_keys=select_keys, non_tensor_batch_keys=non_tensor_select_keys)
@@ -1074,13 +1262,18 @@ class DataParallelPPOActor(BasePPOActor):
                                 teacher_ctrl_inputs["multi_modal_inputs"] = model_inputs[
                                     "teacher_ctrl_multi_modal_inputs"
                                 ]
+                            # The contrast target needs the ctrl branch's full-vocab log-probs
+                            # (not just the chosen-token logp used for RA weights).
+                            ctrl_return_all_logps = (
+                                self_distillation_cfg.get("ra_target_mode", "teacher") == "contrast"
+                            )
                             with torch.no_grad():
                                 teacher_ctrl_forward_start = time.perf_counter()
                                 teacher_ctrl_outputs = self._forward_micro_batch(
                                     teacher_ctrl_inputs,
                                     temperature=temperature,
                                     calculate_entropy=False,
-                                    return_all_logps=False,
+                                    return_all_logps=ctrl_return_all_logps,
                                     distill_topk=None,
                                     module=teacher_model,
                                 )
@@ -1089,6 +1282,9 @@ class DataParallelPPOActor(BasePPOActor):
                                 teacher_ctrl_forward_time
                             )
                             teacher_ctrl_log_prob = teacher_ctrl_outputs["log_probs"]
+                            teacher_ctrl_all_logps = (
+                                teacher_ctrl_outputs.get("all_logps") if ctrl_return_all_logps else None
+                            )
                         if self_distillation_cfg.get("log_prob_dump_dir", None):
                             if distill_topk:
                                 student_distill_log_probs = student_topk_logps
@@ -1120,6 +1316,21 @@ class DataParallelPPOActor(BasePPOActor):
                                 raise ValueError(
                                     "RA-VAD requires student_all_logps, teacher_all_logps, and ctrl log probs."
                                 )
+                            ra_weight_source = self_distillation_cfg.get("ra_weight_source", "logprob")
+                            ra_raw_override = None
+                            if ra_weight_source == "attention":
+                                attention_forward_start = time.perf_counter()
+                                ra_raw_override = self._compute_attention_ra_raw(
+                                    teacher_inputs=teacher_inputs,
+                                    response_length=teacher_inputs["responses"].size(-1),
+                                    model_path=self_distillation_cfg["ra_attention_scorer_model_path"],
+                                    image_token_id=self_distillation_cfg["ra_attention_image_token_id"],
+                                    num_layers=self_distillation_cfg.get("ra_attention_num_layers", 8),
+                                    scorer_batch_size=self_distillation_cfg.get("ra_attention_scorer_batch_size", 1),
+                                )
+                                stage_wall_time_totals["timing_s/update_actor/teacher_forward"] += (
+                                    time.perf_counter() - attention_forward_start
+                                )
                             ra_weights, ra_metrics = compute_ra_weights(
                                 logp_hi=teacher_log_prob,
                                 logp_ctrl=teacher_ctrl_log_prob,
@@ -1131,6 +1342,14 @@ class DataParallelPPOActor(BasePPOActor):
                                 no_sample_gate=self_distillation_cfg.get("ra_no_sample_gate", False),
                                 margin_scale=self_distillation_cfg.get("ra_margin_scale", 0.5),
                                 answer_scale=self_distillation_cfg.get("ra_answer_scale", 0.1),
+                                ra_raw_override=ra_raw_override,
+                            )
+                            self._dump_ra_token_weights(
+                                global_step=self._current_global_steps,
+                                self_distillation_cfg=self_distillation_cfg,
+                                response_ids=teacher_inputs["responses"],
+                                ra_weights=ra_weights,
+                                response_mask=response_mask,
                             )
                             vopd_loss, vopd_metrics = ra_kd_loss(
                                 student_all_log_probs=student_all_logps,
@@ -1138,7 +1357,28 @@ class DataParallelPPOActor(BasePPOActor):
                                 ra_weights=ra_weights,
                                 response_mask=response_mask,
                                 self_distillation_mask=self_distillation_mask,
+                                logp_hi=teacher_log_prob,
+                                logp_ctrl=teacher_ctrl_log_prob,
                                 temperature=self_distillation_cfg.get("ra_temperature", 2.0),
+                                divergence_alpha=self_distillation_cfg.get("ra_divergence_alpha", 0.0),
+                                weighting_mode=self_distillation_cfg.get("ra_weighting_mode", "continuous"),
+                                shuffle_seed=self_distillation_cfg.get("ra_shuffle_seed", 12345),
+                                vaopd_pv=self_distillation_cfg.get("ra_vaopd_pv", 0.2),
+                                vaopd_lambda=self_distillation_cfg.get("ra_vaopd_lambda", 0.5),
+                                rollout_reweight=self_distillation_cfg.get("ra_rollout_reweight", False),
+                                rollout_tau=self_distillation_cfg.get("ra_rollout_tau", 1.0),
+                                uids=model_inputs.get("uid"),
+                                target_mode=self_distillation_cfg.get("ra_target_mode", "teacher"),
+                                teacher_ctrl_all_log_probs=teacher_ctrl_all_logps,
+                                contrast_alpha=self_distillation_cfg.get("ra_contrast_alpha", 1.0),
+                                contrast_beta=self_distillation_cfg.get("ra_contrast_beta", 0.1),
+                                contrast_anchor_coef=self_distillation_cfg.get("ra_contrast_anchor_coef", 1.0),
+                                contrast_gate_positive_only=self_distillation_cfg.get(
+                                    "ra_contrast_gate_positive_only", False
+                                ),
+                                contrast_exclude_token_ids=self_distillation_cfg.get(
+                                    "ra_contrast_exclude_token_ids", None
+                                ),
                             )
                             vopd_metrics.update(ra_metrics)
                             vopd_metrics["ra_vad/teacher_hi_logp_mean"] = (
@@ -1147,6 +1387,45 @@ class DataParallelPPOActor(BasePPOActor):
                             vopd_metrics["ra_vad/teacher_ctrl_logp_mean"] = (
                                 (teacher_ctrl_log_prob * response_mask).sum() / response_mask.sum().clamp(min=1.0)
                             ).detach().item()
+                        elif self_distillation_cfg.get("opd_token_reward", False):
+                            # thunlp/OPD token_reward_direct (VLM port): detached top-k
+                            # divergence as a 3-D advantage through the PPO clipped loss.
+                            # teacher_topk_logps is already T_on_S -- the teacher forward
+                            # above passes topk_indices=student_topk_indices (only_stu).
+                            if student_topk_logps is None or teacher_topk_logps is None:
+                                raise ValueError(
+                                    "opd_token_reward needs student/teacher top-k log-probs; set "
+                                    "self_distillation.distillation_topk=<K> and full_logit_distillation=True."
+                                )
+                            if self.config.ppo_epochs != 1:
+                                raise ValueError(
+                                    "opd_token_reward currently requires actor.ppo_epochs=1: no 3-D "
+                                    f"old top-k log-probs are cached, got ppo_epochs={self.config.ppo_epochs}."
+                                )
+                            vopd_loss, vopd_metrics = compute_opd_token_reward_loss(
+                                student_topk_log_probs=student_topk_logps,
+                                teacher_topk_log_probs=teacher_topk_logps,
+                                response_mask=response_mask,
+                                # No 3-D old_log_probs are stored in the batch, so the ratio is
+                                # only exact on-policy (ppo_epochs=1), where it is identically 1.
+                                # Guarded below rather than silently using a stale ratio.
+                                old_topk_log_probs=None,
+                                reward_weight_mode=self_distillation_cfg.get(
+                                    "opd_reward_weight_mode", "student_p"
+                                ),
+                                cliprange_low=self.config.clip_ratio_low,
+                                cliprange_high=self.config.clip_ratio_high,
+                                clip_ratio_c=self.config.get("clip_ratio_c", 3.0),
+                                reward_clamp=self_distillation_cfg.get("opd_reward_clamp", 10.0),
+                                teacher_logp_min_clamp=self_distillation_cfg.get(
+                                    "opd_teacher_logp_min_clamp", -10.0
+                                ),
+                                loss_agg_mode=loss_agg_mode,
+                                self_distillation_mask=self_distillation_mask,
+                                batch_num_tokens=self.config.global_batch_info.get("batch_num_tokens"),
+                                global_batch_size=self.config.global_batch_info.get("global_batch_size"),
+                                loss_scale_factor=self.config.global_batch_info.get("loss_scale_factor"),
+                            )
                         else:
                             vopd_loss, vopd_metrics = compute_self_distillation_loss(
                                 student_log_probs=log_prob,

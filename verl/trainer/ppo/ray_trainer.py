@@ -864,6 +864,16 @@ class RayPPOTrainer:
             black_images.append(Image.new("RGB", normalized.size, color=(0, 0, 0)))
         return black_images
 
+    def _make_noise_images_like(self, images: list[Any]) -> list[Image.Image]:
+        noise_images = []
+        for image in images:
+            normalized = self._normalize_teacher_image(image)
+            w, h = normalized.size
+            noise = np.random.normal(loc=127.5, scale=64.0, size=(h, w, 3))
+            noise = np.clip(noise, 0, 255).astype(np.uint8)
+            noise_images.append(Image.fromarray(noise, mode="RGB"))
+        return noise_images
+
     @staticmethod
     def _extract_images_from_messages(messages: list[dict]) -> list[Image.Image]:
         images = []
@@ -1450,6 +1460,8 @@ class RayPPOTrainer:
                             )
                         if ra_ctrl_mode == "black":
                             ctrl_images = self._make_black_images_like(ctrl_images)
+                        if ra_ctrl_mode == "gaussnoise":
+                            ctrl_images = self._make_noise_images_like(ctrl_images)
                         if ra_ctrl_mode == "qvis":
                             ctrl_prompt_messages = self._build_generic_visual_messages(
                                 raw_prompt_messages,

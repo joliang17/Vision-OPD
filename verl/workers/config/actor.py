@@ -66,6 +66,7 @@ class SelfDistillationConfig(BaseConfig):
         teacher_always_on (bool): Whether to distill every sample directly from a teacher input instead of selecting successful samples by reward.
         teacher_model_source (str): Teacher source. Options: "legacy", "current" or "fixed".
         teacher_model_path (Optional[str]): Fixed teacher model path when teacher_model_source="fixed".
+        save_ema_teacher_checkpoint (bool): Save the EMA teacher weights alongside actor checkpoints.
         teacher_image_key (Optional[str]): Dataset column holding teacher-side images for multimodal distillation.
         fallback_to_policy_loss_on_missing_teacher (bool): When teacher_always_on=True, fall back to vanilla
             policy loss for samples whose teacher_image_key column is empty.
@@ -105,8 +106,17 @@ class SelfDistillationConfig(BaseConfig):
     teacher_always_on: bool = False
     teacher_model_source: str = "legacy"
     teacher_model_path: Optional[str] = None
+    save_ema_teacher_checkpoint: bool = False
     teacher_image_key: Optional[str] = None
     teacher_prompt_mode: Optional[str] = None
+    # thunlp/OPD "token_reward_direct" objective (arXiv:2604.13016), VLM port.
+    # When True the teacher/student top-k divergence is detached into a 3-D advantage and
+    # consumed by the PPO clipped policy loss instead of being backpropagated as a KL loss.
+    # Requires full_logit_distillation=True and distillation_topk=<K>.
+    opd_token_reward: bool = False
+    opd_reward_weight_mode: str = "student_p"  # "student_p" | "teacher_p" | "none"
+    opd_reward_clamp: Optional[float] = 10.0
+    opd_teacher_logp_min_clamp: Optional[float] = -10.0
     ra_vad: bool = False
     ra_ctrl_mode: str = "none"
     ra_ctrl_image_key: Optional[str] = None
@@ -119,6 +129,63 @@ class SelfDistillationConfig(BaseConfig):
     ra_no_sample_gate: bool = False
     ra_margin_scale: float = 0.5
     ra_answer_scale: float = 0.1
+    ra_weighting_mode: str = "continuous"
+    ra_shuffle_seed: int = 12345
+    # Source of the per-token relevance signal fed into compute_ra_weights:
+    # "logprob" (default) = logp_hi - logp_ctrl teacher-forced gap;
+    # "attention" = attention-to-image-token concentration, computed by a dedicated frozen,
+    # unsharded (non-FSDP) copy of the base model loaded specifically for this — flash-attention
+    # kernels never materialize attention weights, and extracting them from the live
+    # FSDP-sharded teacher via ad-hoc eager-attention forwards ran into multiple FSDP1
+    # summon_full_params/param_offload interaction bugs, see docs/compare_vaopd_0701.md Phase
+    # 2-核心 第七/八轮. A separate frozen scorer sidesteps all of that and matches the offline
+    # analysis methodology exactly (which also used a fixed base checkpoint, not a live teacher).
+    ra_weight_source: str = "logprob"
+    # Model path for the frozen attention scorer. Required when ra_weight_source="attention".
+    # Typically the same base checkpoint used to initialize training (see actor.yaml default,
+    # which interpolates actor_rollout_ref.model.path).
+    ra_attention_scorer_model_path: Optional[str] = None
+    # Qwen3-VL image placeholder token id (config.image_token_id). Required when
+    # ra_weight_source="attention" so the extractor knows which key positions are image tokens.
+    ra_attention_image_token_id: Optional[int] = None
+    # Only average the last N decoder layers' attention into the score (all layers are still
+    # computed by output_attentions=True regardless — this only affects which are used, not
+    # memory/compute). <=0 means use all layers.
+    ra_attention_num_layers: int = 8
+    # How many samples to run through the attention scorer per forward call. Larger values reduce
+    # Python/kernel-launch overhead (fewer, better-utilized calls) but raise peak memory linearly
+    # (the O(seq_len^2) attention matrices dominate). Start at 1, raise only after confirming
+    # headroom for the training sequence lengths in use.
+    ra_attention_scorer_batch_size: int = 1
+    # Opt-in diagnostic: per-step dump of a few samples' (response token id, RA weight) pairs to
+    # `ra_token_dump_dir`/<experiment_name>/<step>.rank<r>.pt, for tracking "which tokens get high
+    # weight, and how does that change over training" without a separate offline analysis run.
+    # Off by default. Decode with scripts/summarize_ra_token_dump.py.
+    ra_token_dump_dir: Optional[str] = None
+    ra_token_dump_max_samples: int = 4
+    # Distillation target: "teacher" (default, plain EMA-teacher hi distribution) or "contrast"
+    # (contrast-sharpened target softmax(lp_hi + α(lp_hi − lp_ctrl)) restricted to hi's
+    # plausibility set — see verl/trainer/ppo/ra_vad.py build_contrast_target and
+    # docs/compare_vaopd_0701.md Phase 2-核心 第十轮 for motivation/diagnostics).
+    ra_target_mode: str = "teacher"
+    # Contrast tilt strength α (offline pre-check: 0.5 conservative, 1.0 standard).
+    ra_contrast_alpha: float = 1.0
+    # Anchor coefficient on the plain lp_hi term: target = softmax(anchor_coef·lp_hi + α·(lp_hi−lp_ctrl)).
+    # 1.0 (default) = current contrast target; 0.0 + α=1.0 = pure contrastive-decoding target (no anchor).
+    ra_contrast_anchor_coef: float = 1.0
+    # Plausibility threshold β: candidate set = {w : p_hi(w) ≥ β max p_hi}.
+    ra_contrast_beta: float = 0.1
+    # If True, only apply the tilt at positions with positive RA weight; elsewhere the target
+    # stays the plain hi distribution (≈ zero gradient there).
+    ra_contrast_gate_positive_only: bool = False
+    # Vocab ids excluded from the tilt (keep plain lp_hi score), e.g. <|im_end|>/<|endoftext|> —
+    # the offline pre-check caught the raw tilt boosting early-termination tokens.
+    ra_contrast_exclude_token_ids: Optional[list[int]] = None
+    ra_vaopd_pv: float = 0.2
+    ra_vaopd_lambda: float = 0.5
+    ra_rollout_reweight: bool = False
+    ra_rollout_tau: float = 1.0
+    ra_divergence_alpha: float = 0.0
     # Visual-token budgets for the offline degrade control (R_res).
     # downsample target area = ra_ctrl_low_tokens * 28 * 28 (Qwen3-VL patch=28),
     # matching unsup-opsd/ra_vad `_LOW_TOKENS/_UP_TOKENS`.
@@ -162,7 +229,7 @@ class SelfDistillationConfig(BaseConfig):
             raise ValueError(
                 f"self_distillation.teacher_prompt_mode must be None or 'answer_hint', got {self.teacher_prompt_mode}"
             )
-        valid_ra_ctrl_modes = ["none", "degrade", "qvis", "noimg", "black"]
+        valid_ra_ctrl_modes = ["none", "degrade", "qvis", "noimg", "black", "gaussnoise"]
         if self.ra_ctrl_mode not in valid_ra_ctrl_modes:
             raise ValueError(
                 f"self_distillation.ra_ctrl_mode must be one of {valid_ra_ctrl_modes}, got {self.ra_ctrl_mode}"
@@ -172,7 +239,7 @@ class SelfDistillationConfig(BaseConfig):
                 raise ValueError("self_distillation.ra_vad requires teacher_prompt_mode=None.")
             if self.ra_ctrl_mode == "none":
                 raise ValueError("self_distillation.ra_vad requires ra_ctrl_mode != 'none'.")
-            if self.ra_ctrl_mode in {"none", "degrade", "qvis", "black"} and not self.ra_ctrl_image_key:
+            if self.ra_ctrl_mode in {"none", "degrade", "qvis", "black", "gaussnoise"} and not self.ra_ctrl_image_key:
                 raise ValueError(
                     "self_distillation.ra_ctrl_image_key is required when ra_vad=True and "
                     f"ra_ctrl_mode={self.ra_ctrl_mode!r}."
@@ -188,6 +255,71 @@ class SelfDistillationConfig(BaseConfig):
                 )
             if self.ra_temperature <= 0:
                 raise ValueError(f"self_distillation.ra_temperature must be positive, got {self.ra_temperature}")
+            valid_ra_weighting_modes = ["continuous", "vaopd_grouped", "shuffled_control"]
+            if self.ra_weighting_mode not in valid_ra_weighting_modes:
+                raise ValueError(
+                    "self_distillation.ra_weighting_mode must be one of "
+                    f"{valid_ra_weighting_modes}, got {self.ra_weighting_mode}"
+                )
+            valid_ra_weight_sources = ["logprob", "attention"]
+            if self.ra_weight_source not in valid_ra_weight_sources:
+                raise ValueError(
+                    "self_distillation.ra_weight_source must be one of "
+                    f"{valid_ra_weight_sources}, got {self.ra_weight_source}"
+                )
+            if self.ra_weight_source == "attention":
+                if self.ra_attention_image_token_id is None:
+                    raise ValueError(
+                        "self_distillation.ra_attention_image_token_id is required when "
+                        "ra_weight_source='attention'."
+                    )
+                if not self.ra_attention_scorer_model_path:
+                    raise ValueError(
+                        "self_distillation.ra_attention_scorer_model_path is required when "
+                        "ra_weight_source='attention'."
+                    )
+            valid_ra_target_modes = ["teacher", "contrast"]
+            if self.ra_target_mode not in valid_ra_target_modes:
+                raise ValueError(
+                    "self_distillation.ra_target_mode must be one of "
+                    f"{valid_ra_target_modes}, got {self.ra_target_mode}"
+                )
+            if self.ra_target_mode == "contrast":
+                if not self.full_logit_distillation or self.distillation_topk is not None:
+                    raise ValueError(
+                        "self_distillation.ra_target_mode='contrast' requires "
+                        "full_logit_distillation=True and distillation_topk=null (the target is "
+                        "built over the full vocabulary of both the hi and ctrl branches)."
+                    )
+                # alpha=0 disables the contrast tilt entirely (tilted = lp_hi), leaving a fully
+                # matched pure-EMA-teacher self-distillation target that keeps the identical β mask,
+                # exclude-token, uniform-weight and forward-KL pipeline — this is the paper's
+                # matched α=0 baseline (only variable vs ours is the tilt term). Numerically safe:
+                # ra_vad.py build_contrast_target reduces to log_softmax(lp_hi over plausible set).
+                # Negative alpha is still rejected (would anti-tilt toward the ctrl branch).
+                if self.ra_contrast_alpha < 0:
+                    raise ValueError(
+                        f"self_distillation.ra_contrast_alpha must be non-negative, got {self.ra_contrast_alpha}"
+                    )
+                # beta=0 disables the plausibility mask entirely (log(0)=-inf -> all tokens pass),
+                # numerically safe in ra_vad.py:387; allowed for the P13 no-mask ablation (2026-07-17).
+                if not 0.0 <= self.ra_contrast_beta < 1.0:
+                    raise ValueError(
+                        f"self_distillation.ra_contrast_beta must be in [0,1), got {self.ra_contrast_beta}"
+                    )
+            if not 0.0 < self.ra_vaopd_pv <= 1.0:
+                raise ValueError(f"self_distillation.ra_vaopd_pv must be in (0,1], got {self.ra_vaopd_pv}")
+            if not 0.0 <= self.ra_vaopd_lambda <= 1.0:
+                raise ValueError(
+                    f"self_distillation.ra_vaopd_lambda must be in [0,1], got {self.ra_vaopd_lambda}"
+                )
+            if self.ra_rollout_tau <= 0:
+                raise ValueError(f"self_distillation.ra_rollout_tau must be positive, got {self.ra_rollout_tau}")
+            if not 0.0 <= self.ra_divergence_alpha <= 1.0:
+                raise ValueError(
+                    "self_distillation.ra_divergence_alpha must be in [0,1], "
+                    f"got {self.ra_divergence_alpha}"
+                )
             if self.ra_margin_scale <= 0:
                 raise ValueError(f"self_distillation.ra_margin_scale must be positive, got {self.ra_margin_scale}")
             if self.ra_answer_scale <= 0:
@@ -205,6 +337,23 @@ class SelfDistillationConfig(BaseConfig):
                 "self_distillation.teacher_image_key is required when teacher_always_on=True "
                 "(unless teacher_prompt_mode='answer_hint')"
             )
+        if self.opd_token_reward:
+            if self.ra_vad:
+                raise ValueError(
+                    "self_distillation.opd_token_reward is a standalone OPD baseline and cannot be "
+                    "combined with ra_vad=True (the contrast target has no meaning as a detached reward)."
+                )
+            if not self.full_logit_distillation or self.distillation_topk is None:
+                raise ValueError(
+                    "self_distillation.opd_token_reward=True requires full_logit_distillation=True "
+                    "and distillation_topk=<K> (thunlp only_stu top-k)."
+                )
+            valid_weight_modes = ["student_p", "teacher_p", "none"]
+            if self.opd_reward_weight_mode not in valid_weight_modes:
+                raise ValueError(
+                    "self_distillation.opd_reward_weight_mode must be one of "
+                    f"{valid_weight_modes}, got {self.opd_reward_weight_mode}"
+                )
         valid_teacher_model_source = ["legacy", "current", "fixed"]
         if self.teacher_model_source not in valid_teacher_model_source:
             raise ValueError(

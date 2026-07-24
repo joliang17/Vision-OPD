@@ -22,7 +22,7 @@ API_BASE="${API_BASE:?ERROR: API_BASE must be set (e.g. http://localhost:8000/v1
 OPENAI_MODEL_ID="${OPENAI_MODEL_ID:?ERROR: OPENAI_MODEL_ID must be set}"
 
 # --- Optional ---
-BENCHMARK="${BENCHMARK:-vstar}"
+BENCHMARK="${BENCHMARK:-zoombench}"
 API_KEY="${OPENAI_API_KEY:-EMPTY}"
 MODEL_NAME="${MODEL_NAME:-${OPENAI_MODEL_ID//\//_}}"
 SEED="${SEED:-42}"
@@ -34,6 +34,10 @@ ENABLE_THINKING="${ENABLE_THINKING:-}"
 
 JUDGE_API_BASE="${JUDGE_API_BASE:-}"
 JUDGE_API_KEY="${JUDGE_API_KEY:-}"
+JUDGE_API_TYPE="${JUDGE_API_TYPE:-openai}"
+JUDGE_API_VERSION="${JUDGE_API_VERSION:-}"
+JUDGE_KEY_CONF="${JUDGE_KEY_CONF:-${KEY_CONF:-}}"
+JUDGE_LOGID="${JUDGE_LOGID:-}"
 JUDGE_MODEL="${JUDGE_MODEL:-}"
 JUDGE_MODEL_PATH="${JUDGE_MODEL_PATH:-}"
 JUDGE_MAX_TOKENS="${JUDGE_MAX_TOKENS:-2048}"
@@ -107,6 +111,10 @@ run_single_benchmark() {
   local -a JUDGE_ARGS=()
   [[ -n "${JUDGE_API_BASE}" ]] && JUDGE_ARGS+=(--api_base "${JUDGE_API_BASE}")
   [[ -n "${JUDGE_API_KEY}" ]] && JUDGE_ARGS+=(--api_key "${JUDGE_API_KEY}")
+  [[ -n "${JUDGE_API_TYPE}" ]] && JUDGE_ARGS+=(--api_type "${JUDGE_API_TYPE}")
+  [[ -n "${JUDGE_API_VERSION}" ]] && JUDGE_ARGS+=(--api_version "${JUDGE_API_VERSION}")
+  [[ -n "${JUDGE_KEY_CONF}" ]] && JUDGE_ARGS+=(--key_conf "${JUDGE_KEY_CONF}")
+  [[ -n "${JUDGE_LOGID}" ]] && JUDGE_ARGS+=(--logid "${JUDGE_LOGID}")
   [[ -n "${JUDGE_MODEL}" ]] && JUDGE_ARGS+=(--judge_model "${JUDGE_MODEL}")
   [[ -n "${JUDGE_MODEL_PATH}" ]] && JUDGE_ARGS+=(--judge_model_path "${JUDGE_MODEL_PATH}")
   [[ -n "${JUDGE_MAX_TOKENS}" ]] && JUDGE_ARGS+=(--judge_max_tokens "${JUDGE_MAX_TOKENS}")
@@ -118,6 +126,7 @@ run_single_benchmark() {
   python3 judge_qwenlm.py \
     --benchmark "${judge_benchmark}" \
     --model "${judge_model_tag}" \
+    --answer_dir "${OUT_DIR}" \
     "${JUDGE_ARGS[@]}"
 
   # [4/4] Accuracy

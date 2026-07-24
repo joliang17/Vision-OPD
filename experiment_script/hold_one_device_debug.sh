@@ -2,7 +2,7 @@
 # Hold one CUDA device for interactive debugging without launching training.
 #
 # Usage:
-#   CUDA_VISIBLE_DEVICES=0 bash scripts/hold_one_device_debug.sh
+#   CUDA_VISIBLE_DEVICES=0 bash experiment_script/hold_one_device_debug.sh
 #
 # Optional:
 #   HOLD_ALLOC_MB=0    allocate this much GPU memory before sleeping
