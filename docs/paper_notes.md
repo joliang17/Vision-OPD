@@ -648,3 +648,71 @@ anchor 的 acc 净贡献在噪声带内(±2)。**语言漂移(rollout 含 CJK �
 - **advantage = ours − max(base,opsd)**（ours 比两个 baseline 都强调更多的 token）排序（visual token 平均）：MathVista_821 +0.56 / 233 +0.38 / MMStar_316 +0.35 / VStar_25 +0.22 / **MMStar_282 +0.20** / VStar_136 +0.13。反例（advantage≤0，靠世界知识非看图）：MathVista_29/745（名人年龄题）、MMStar_309。
 - 展示形式历史：① matplotlib token 底色高亮（有 overlap，弃）② 折线 ③ 柱状聚合（visual vs non-visual token μΔ：ours 0.79 vs base 0.62 vs opsd 0.65；非视觉 token 三方≈0.09——ours 特异增强视觉 token；**用户否，要 token-level**）④ **HTML token 高亮**（`docs/vdh_*.html`，`white-space:pre-wrap` 天然不 overlap，用户认可这个方向）⑤ advantage 绿色行（ours−max(base,opsd)）。
 - 待定：最终进 paper 的样本 + 转 PDF（LaTeX 吃不了 HTML）。措辞红线：单样本只能 "illustrative/consistent with"，量化证据在柱状聚合。
+
+## 16. Vision-OPD 对比（no-supervision baseline，2026-07-30 整理；源 Vision-OPD-exp/docs/plan_beat_visionopd_20260727.md）
+
+Vision-OPD = **bbox-supervised** OPSD（用标注 crop teacher，属监督信号）；\method = **no-supervision**。对比只在 **4B、两底座**（Qwen3-VL-4B / Qwen3.5-4B）有数据。**Vision-OPD 行是我们的 reproduction，从未有官方 ckpt**（Qwen3-VL-4B = 官方代码训 yijiangli step65；Qwen3.5-4B = 我们训 trial301761390 step62）。
+
+### 16a. VLMEvalKit 7-bench（\method uniform s90 × virl39k；temp0/pp1.5/4096，gpt-5.4-mini judge）
+| 底座 | base | \method | Vision-OPD (repro) | \method − Vision-OPD |
+|---|--:|--:|--:|--:|
+| Qwen3-VL-4B | 71.30 | 72.75 | 70.27 | **+2.48** |
+| Qwen3.5-4B | 73.94 | 75.89 | 73.06 | **+2.83** |
+- 净提升（vs base）：\method Qwen3-VL-4B +1.86 / Qwen3.5-4B +0.33；Vision-OPD-repro −1.03 / −3.39（**7-bench 全线低于 base**）。
+
+### 16b. Native 定位套件（V*/HR4K/HR8K/ZoomBench；同管线 v3-fixed judge，temp0 seed42）
+| 底座 | 方法 | V* | HR4K | HR8K | Zoom |
+|---|---|--:|--:|--:|--:|
+| Qwen3-VL-4B | \method | 85.86 | 80.50 | 77.25 | 41.42 |
+| Qwen3-VL-4B | Vision-OPD (repro) | 84.82 | 81.00 | 77.12 | 53.25 |
+| Qwen3.5-4B | \method | 85.34 | 86.50 | 81.88 | 52.19 |
+| Qwen3.5-4B | Vision-OPD (repro) | 90.58 | 82.12 | 79.62 | 59.05 |
+- \method − Vision-OPD：Qwen3-VL-4B → V* +1.04 / HR4K −0.50 / HR8K +0.13 / **Zoom −11.83**；Qwen3.5-4B → V* −5.24 / HR4K +4.38 / HR8K +2.26 / **Zoom −6.86**。
+
+### 16c. 叙事（paper section 用）
+1. \method（无监督）7-bench 上高出 Vision-OPD reproduction **+2.9 / +3.7**。
+2. **"拿通用换定位"**：Vision-OPD 的 7-bench 全线低于 base（用通用能力换定位）；\method 通用小幅正向、定位大体持平。
+3. \method 唯一实质短板 = **ZoomBench**（−6.9 / −11.8），来自 Vision-OPD 的 **bbox 监督 crop 机制**在定位任务上的优势。
+4. paper 定位：\method 作为 **no-supervision baseline**，不引入任何额外标注，即可保持/提升通用能力并在多数定位维度持平。
+
+### 16d. 措辞红线（写 tex 必守）
+- Vision-OPD 行一律写 "**our reproduction of Vision-OPD**"，不得暗示是官方 ckpt/官方数字。
+- **两个口径（VLMEvalKit 7-bench 表 16a vs native 定位表 16b）分开呈现、绝不混排**（口径不同：judge/温度/采样均不同）。
+- native 口径已与 Vision-OPD 官方 report 对齐（Qwen3-VL-4B 四项 ±0.5 内、Qwen3.5-4B −1.6 内），可信。
+- bbox = 标注监督，\method **不引入**（no-supervision 是核心 claim）。不写"beats/solves"类禁用词。
+
+### 16e. 综合表（用户 2026-07-30 要求：把 16a+16b 合并成一张，格式同主表 Table 1）
+列 = Model / Method / BLINK / MMStar / V* / MathVista / HR4K / HR8K / HalluB / Acc / ZoomBench。**这张替换原来的两张（Table 5 tab:vision-opd-seven-benchmark + Table 6 tab:vision-opd-localization）。**
+
+| Model | Method | BLINK | MMStar | V* | MathVista | HR4K | HR8K | HalluB | Acc | Zoom |
+|---|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|
+| Qwen3-VL-4B | base | 67.18 | 68.93 | 80.63 | 73.90 | 79.88 | 73.75 | 54.81 | 71.30 | 44.14 |
+| Qwen3-VL-4B | \method | 66.12 | 70.53 | 84.29 | 77.20 | 80.88 | 70.37 | 59.87 | **72.75** | TBD |  ← 08-06 换成 vopd6k 训（旧行 66.86/…/73.16/43.08 是 virl39k 训，与本表 Vision-OPD 数据不符，已作废）
+| Qwen3-VL-4B | Vision-OPD (repro) | 63.76 | 65.67 | 83.25 | 71.40 | 76.50 | 75.25 | 56.03 | 70.27 | 52.90 |
+| Qwen3.5-4B | base | 64.97 | 73.00 | 82.20 | 81.70 | 81.38 | 74.00 | 60.36 | 73.94 | 52.43 |
+| Qwen3.5-4B | \method | 67.65 | 74.73 | 84.29 | 82.70 | 85.88 | 73.62 | 62.35 | **75.89** | TBD |  ← 08-06 换成 vopd6k 训（旧行 …76.78/53.49 是 virl39k 训，已作废）
+| Qwen3.5-4B | Vision-OPD (repro) | 62.65 | 70.93 | 86.91 | 79.20 | 82.38 | 72.00 | 57.35 | 73.06 | 59.05 |
+
+口径说明（进 caption/脚注）：
+- **BLINK…HalluB + Acc = VLMEvalKit seven-benchmark**（temp0/pp1.5/4096，gpt-5.4-mini judge）；Acc = 这 7 项均值。
+- **ZoomBench = native 口径**（v3 judge，temp0 seed42）；VLMEvalKit 不含 Zoom，故单列并用脚注注明口径不同。
+- ⚠️ 此表的 **V*/HR4K/HR8K 是 VLMEvalKit 口径**（与 §16b native 表的同名列数值不同，如 ours-VL-4B 这里 V\*=83.77 vs native 85.86）——合并表统一走 VLMEvalKit，别把 §16b 的 native V*/HR4K/HR8K 混进来。
+- Vision-OPD 行仍是 our reproduction（措辞红线同 §16d）。
+
+## 17. Eval 可复现性验证(2026-08-04/05,devbox 提交 ruby 665 1-GPU mlx)
+
+**目的**:用户要求复刻主表 ours(2B) 67.04 那行,验证 eval 管线可复现;后扩展到 OPSD 与 4B。
+**协议**:同 ckpt、同 7-bench、BACKEND=vllm_server、**系统栈 vllm 0.11**(不激活 conda,与原 07-20 serve 日志栈一致)、seed 未动(vllm serve 默认 seed=0,两边一致)、新 tag `*_rerun0804` 不覆盖原结果。
+
+| 复刻 | ckpt | 原 Acc | rerun Acc | Δ | V* Δ |
+|---|---|--:|--:|--:|--:|
+| 2B ours (FC1 s90) | `...contrast-uniform-...UNFILTERED1img-150step-keepall-trial301783374/global_step_90` | 67.04 | 66.62 | −0.42 | **−3.14**(78.01→74.87) |
+| 2B OPSD (FC4 s90) | `...baseline-...150step-keepall-trial301783374/global_step_90` | 64.18 | 64.37 | +0.18 | +1.57(75.39→76.96) |
+| 4B ours (uniformweight s90) | `...contrast-standard-uniformweight-Qwen3-VL-4B-...90step-trial301829143/global_step_90` | 73.16 | 73.26 | +0.10 | −0.52(83.77→83.25) |
+
+**结论**:
+1. 管线可复现:21 项里 20 项 ±1.6 内(4B 几乎逐字,HR4K Δ=0.00)。整体 Acc ±0.42 内。
+2. **V\* 波动是 2B 特有的模型边缘性**:2B 两次一负一正(−3.14/+1.57),4B 稳(−0.52)。2B 逐样本 diff:191 样本 58 条文本不同、仅 8 条判定翻转(7 对→错 1 错→对),全是颜色/方位感知题、预测开头相同中途分叉 = temp0 下 vllm 并发 batching 数值非确定性。FC1 曲线自身 V\* 波动带 71.73~78.53 亦印证。
+3. 排除项:seed(两边默认 0)、采样 config(逐字一致)、eval 代码(vlmeval 核心 07-21 后零改动;08-03 的 eval_via_vllm_server 改动仅 video 参数、空默认不进 image 路径)。
+4. ⚠️ 主表 OPSD 行(64.89)= S2b seed1234 ckpt **已被 prune,无法复刻该行本身**;FC4 是同配方默认 seed 的现存 ckpt。
+5. rerun 结果快照:各 eval 目录下 `normal_scoring*snapshot*`;paper 数字不动(原值仍有效,rerun 证明其稳健)。
