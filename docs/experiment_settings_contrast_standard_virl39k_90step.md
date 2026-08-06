@@ -1,6 +1,12 @@
 # 实验设置详录：contrast-标准 × virl39k-filtered（90步）
 
-> 供论文写作使用。对应 checkpoint：`checkpoints/Vision-OPD-contrast-standard-Qwen3-VL-2B-Instruct-virl39k-filtered-90step/`。
+> ⚠️ **本文档记录的是 2026-07-13 那一次特定 run（filtered 数据 + RA-VAD 权重启用），不是 paper 主线配置。**
+> paper 主线见 `docs/paper_state_snapshot_20260724.md:10`：**Qwen3-VL-2B × virl39k × unfiltered × uniform × step90，ours(2B)=67.04**。
+> 两处关键差异：主线用 **unfiltered** 数据（本文档 §2 是 filtered 14,002 行），且 **`ra_uniform_weight=True`（权重关闭）**
+> （本文档 §4.1 写的是 `False`/权重启用）。写 paper 时以主线快照为准，本文档仅作该次 run 的实现细节参考
+> （公式推导、代码行号对照仍然有效）。—— 2026-08-05 核实并加注
+>
+> 对应 checkpoint：`checkpoints/Vision-OPD-contrast-standard-Qwen3-VL-2B-Instruct-virl39k-filtered-90step/`。
 > 全部公式与代码逐行核对过（关键实现：`verl/trainer/ppo/ra_vad.py`、`verl/workers/actor/dp_actor.py`）；另有 Codex 独立审查（结论见文末附录）。
 > 训练命令（2026-07-13，trial 301638440，4×B200）：
 > ```bash
@@ -66,6 +72,10 @@ w_t   = stopgrad(w̃_t · g) · mask_t
 ```
 
 配置：`ra_uniform_weight=False`（流水线启用。消融：置 True 时 w_t=mask_t，7-bench 掉 1.68pp，证明该权重是必要成分——见 compare 文档第十四轮）。
+
+> ⚠️ **仅适用于本次 run。paper 主线相反：`ra_uniform_weight=True`（权重关闭，w_t=mask_t）**，见
+> `paper_state_snapshot_20260724.md:10`。上面那句「该权重是必要成分」是 filtered 数据上的消融结论，
+> 主线换到 unfiltered 后并未沿用。—— 2026-08-05 加注
 
 ### 4.2 对比锐化 target（`build_contrast_target`, ra_vad.py:344-419）
 
